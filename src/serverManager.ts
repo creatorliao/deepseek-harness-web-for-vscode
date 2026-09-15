@@ -1,6 +1,8 @@
 // DshServerManager: spawn `dsh web --port 0`, parse the ready URL from
 // stdout, and manage the child lifecycle (SIGTERM + SIGKILL fallback).
-// Verified facts: doc/feature/00-dsh-vscode/spike-notes.md S1/S3/S4/S6.
+// Verified facts: docs/01-Projects/R20260817-01-桥架构与IDE内嵌/08-事实_Phase0实测笔记.md
+// (S1/S3/S4/S6; upstream behavior has changed since — see
+// docs/03-Resources/20260914-01-DSH上游事实与协议速查.md for version-tagged facts).
 
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import * as fs from "node:fs";
@@ -68,8 +70,23 @@ export interface SessionSummary {
 // -> 303 + Set-Cookie); the manager must keep it for the exchange, while the
 // exposed base URL stays token-free.
 const URL_LINE_RE = /dsh web: (http:\/\/127\.0\.0\.1:\d+)(\/\?[^\s]+)?/;
-const DEFAULT_READY_TIMEOUT_MS = 10_000;
+// Measured on Windows 2026-09-14 (`npm run diagnose:dsh`): `dsh web --port 0`
+// prints its ready line in 4.3-4.6s for dsh 0.1.2-rc.1 and 7.4-7.9s for dsh
+// 0.1.5-rc.1. The old 10s budget left almost no margin, so a cold start, an
+// antivirus scan or a first run in a new workspace produced a FALSE
+// "did not become ready within 10000ms" failure. 60s keeps a >7x margin over
+// the slowest measurement; the UI shows a starting state for the whole wait.
+const DEFAULT_READY_TIMEOUT_MS = 60_000;
 const SIGKILL_GRACE_MS = 6_000;
+/** Bytes of child output quoted back in the ready-timeout error. */
+const OUTPUT_TAIL_BYTES = 600;
+// dsh loads its entire plugin tree on EVERY invocation. Measured on Windows
+// 2026-09-14: `--version` ~0.3s, `web --help` 4.3-5.3s, and the `web --port 0`
+// ready line 4.3-7.9s. The probes below used to allow 5s, which `web --help`
+// only just exceeded — so the probe intermittently returned null (falling back
+// to the version gate) on a machine where dsh worked perfectly. Keep a >3x
+// margin so a cold start or an antivirus scan cannot decide the outcome.
+const PROBE_TIMEOUT_MS = 20_000;
 // dsh < 0.1.2-rc.1 speaks the pre-Typert RPC surface (dot methods, no browser
 // cookie auth); 0.1.2-rc.1 reworked both, so older CLIs are unsupported.
 const MIN_DSH_VERSION = "0.1.2-rc.1";
@@ -229,10 +246,23 @@ function firstExisting(patterns: string[]): string | undefined {
   return undefined;
 }
 
+/** Tail of a child-output buffer, for error messages (marked when truncated). */
+function tailOf(text: string): string {
+  return text.length > OUTPUT_TAIL_BYTES ? "…" + text.slice(-OUTPUT_TAIL_BYTES) : text;
+}
+
 /** npm global prefix (no `bin` suffix — added per platform by callers). */
 function npmGlobalPrefix(): string {
   try {
-    const res = spawnSync("npm", ["prefix", "-g"], { encoding: "utf8" });
+    const res = spawnSync("npm", ["prefix", "-g"], {
+      encoding: "utf8",
+      timeout: 10_000,
+      // npm is `npm.cmd` on Windows, and spawnSync cannot execute a .cmd/.bat
+      // without a shell: the call throws EINVAL/ENOENT, the catch swallows it,
+      // and the npm-global candidates below are skipped entirely — silently
+      // disabling the most common install layout. (Fixed 2026-09-14.)
+      shell: process.platform === "win32",
+    });
     if (res.status === 0 && res.stdout) return res.stdout.trim();
   } catch {
     /* ignore */
@@ -244,7 +274,7 @@ function npmGlobalPrefix(): string {
 export function resolveDshVersion(bin: string): string | null {
   const isWin = process.platform === "win32";
   try {
-    const res = spawnSync(bin, ["--version"], { encoding: "utf8", timeout: 5000, shell: isWin });
+    const res = spawnSync(bin, ["--version"], { encoding: "utf8", timeout: PROBE_TIMEOUT_MS, shell: isWin });
     if (res.status === 0 && res.stdout) return res.stdout.trim().split("\n")[0];
   } catch {
     /* ignore */
@@ -269,7 +299,7 @@ export function probeNoOpenSupport(bin: string): boolean | null {
   if (noOpenProbeCache.has(bin)) return noOpenProbeCache.get(bin)!;
   let result: boolean | null = null;
   try {
-    const res = spawnSync(bin, ["web", "--help"], { encoding: "utf8", timeout: 5000, shell: process.platform === "win32" });
+    const res = spawnSync(bin, ["web", "--help"], { encoding: "utf8", timeout: PROBE_TIMEOUT_MS, shell: process.platform === "win32" });
     // status === 0 means the probe ran (empty help output is still a valid
     // "no --no-open" answer); only a failed/never-started probe yields null.
     if (res.status === 0) result = /--no-open/.test(res.stdout ?? "");
@@ -287,6 +317,10 @@ function exeSuffixes(platform: NodeJS.Platform): string[] {
 
 /** Expand one base path into the platform's binary candidates (dsh / dsh.cmd). */
 function exeCandidates(base: string, platform: NodeJS.Platform): string[] {
+  // An empty base (e.g. an unset $DSH_BIN) must yield NO candidates: expanding
+  // "" would otherwise produce the bare suffix ".cmd", which firstExisting
+  // would then test as a relative path inside the workspace folder.
+  if (!base) return [];
   return exeSuffixes(platform).map((s) => base + s).filter(Boolean);
 }
 
@@ -360,6 +394,8 @@ export class DshServerManager extends EventEmitter {
   private killTimer?: NodeJS.Timeout;
   private readyTimer?: NodeJS.Timeout;
   private stdoutBuffer = "";
+  /** Rolling tail of child stderr, quoted back when the ready line never comes. */
+  private stderrBuffer = "";
   private startSettled = false;
   private startResolve?: (url: string) => void;
   private startReject?: (err: Error) => void;
@@ -449,6 +485,7 @@ export class DshServerManager extends EventEmitter {
     }
 
     this.stdoutBuffer = "";
+    this.stderrBuffer = "";
     this.url = undefined;
     this.authUrl = undefined;
     this.authCookie = undefined;
@@ -469,13 +506,22 @@ export class DshServerManager extends EventEmitter {
     if (passNoOpen) args.push("--no-open");
     args.push(...(opts.extraArgs ?? []));
 
-    const child = spawn(bin, args, {
-      cwd,
-      env,
-      stdio: ["ignore", "pipe", "pipe"],
-      // Windows npm shims are .cmd/.bat — Node needs a shell to run them.
-      shell: process.platform === "win32",
-    });
+    const child = ((): ChildProcess => {
+      // Windows npm/global shims are .cmd/.bat and need a shell. With
+      // shell:true Node concatenates the command string UNQUOTED, so an
+      // absolute path containing spaces (e.g. an editor-bundled shim under
+      // "DSH Desktop") gets split by cmd.exe ("'D:\...\DSH' is not recognized").
+      // Quote an absolute path; leave a bare command name alone so PATH
+      // resolution still works.
+      const needShell = process.platform === "win32";
+      const spawnBin = needShell && /[\\/]/.test(bin) ? `"${bin}"` : bin;
+      return spawn(spawnBin, args, {
+        cwd,
+        env,
+        stdio: ["ignore", "pipe", "pipe"],
+        shell: needShell,
+      });
+    })();
     this.child = child;
 
     return new Promise<string>((resolve, reject) => {
@@ -483,21 +529,30 @@ export class DshServerManager extends EventEmitter {
       this.startReject = reject;
 
       child.stdout?.on("data", (chunk: Buffer) => {
+        // The ready-line regex scans the whole buffer; it is never truncated
+        // (dsh prints only a couple of lines, and losing an early URL line to a
+        // cap would reintroduce the very timeout this code reports).
         this.stdoutBuffer += chunk.toString();
         const parsed = parseReadyLine(this.stdoutBuffer);
         if (parsed) this.onReadyLine(parsed);
       });
       child.stderr?.on("data", (chunk: Buffer) => {
-        this.emit("stderr", chunk.toString());
+        const text = chunk.toString();
+        this.stderrBuffer = tailOf(this.stderrBuffer + text);
+        this.emit("stderr", text);
       });
       child.on("error", (err: NodeJS.ErrnoException) => {
         // Sleep/wake diagnostics: an "error" event without exit is a signal
         // hiccup (e.g. EINTR after SIGSTOP/CONT during laptop sleep).
         console.log(`[dsh] child error pid=${child.pid} code=${err.code} msg=${err.message}`);
+        // A path the user configured explicitly deserves a message naming it,
+        // rather than the auto-detect candidate list.
         const msg =
           err.code === "ENOENT"
-            ? `dsh not found. Tried: ${["PATH", ...resolved.tried].join(", ")}. ` +
-              `Install with: npm i -g @deepseek-ai/dsh`
+            ? opts.dshBin
+              ? `dsh not found at the configured path "${opts.dshBin}" — check the deepseekHarness.dshPath setting`
+              : `dsh not found. Tried: ${["PATH", ...resolved.tried].join(", ")}. ` +
+                `Install with: npm i -g @deepseek-ai/dsh`
             : err.message;
         this.settleError(new Error(msg));
       });
@@ -508,9 +563,9 @@ export class DshServerManager extends EventEmitter {
         this.clearKillTimer();
         const prev = this._state;
         if (prev === "ready") {
-          this.setState("error", { message: `dsh exited unexpectedly (code=${code}, signal=${signal})` });
+          this.setState("error", { message: `dsh exited unexpectedly (code=${code}, signal=${signal})${this.outputHint()}` });
         } else if (prev === "starting") {
-          this.settleError(new Error(`dsh exited before ready (code=${code}, signal=${signal})`));
+          this.settleError(new Error(`dsh exited before ready (code=${code}, signal=${signal})${this.outputHint()}`));
         } else if (prev === "stopping") {
           this.setState("stopped");
         }
@@ -520,7 +575,17 @@ export class DshServerManager extends EventEmitter {
       });
 
       this.readyTimer = setTimeout(() => {
-        this.settleError(new Error(`dsh did not become ready within ${readyTimeoutMs}ms`));
+        // Quote back what the child actually produced: without it the failure
+        // is indistinguishable from a hang, and the only way to find out was to
+        // reproduce it outside the editor.
+        this.settleError(
+          new Error(
+            `dsh did not become ready within ${readyTimeoutMs}ms — bin=${bin} ` +
+              `version=${version ?? "unknown"} ` +
+              `stdout=${JSON.stringify(tailOf(this.stdoutBuffer))} ` +
+              `stderr=${JSON.stringify(tailOf(this.stderrBuffer))}`
+          )
+        );
         this.killNow();
       }, readyTimeoutMs);
     });
@@ -623,6 +688,26 @@ export class DshServerManager extends EventEmitter {
     this.startSettled = true;
     this.clearReadyTimer();
     this.startReject?.(err);
+  }
+
+  /**
+   * Diagnostic suffix for child-exit errors. A bare `code=1` names no cause:
+   * on 2026-09-15 a koffi ABI mismatch killed every `dsh web` boot with the
+   * reason printed only on stderr, so the editor user saw an unexplained exit.
+   * Quoting the tail alone is not enough — a plugin-tree crash prints a long
+   * AggregateError whose last 600 bytes are closing braces — hence the first
+   * error line is quoted too. Empty when the child said nothing at all.
+   */
+  private outputHint(): string {
+    const parts: string[] = [];
+    const firstErrorLine = this.stderrBuffer.split(/\r?\n/).find((line) => /\b(error|exception)\b/i.test(line));
+    if (firstErrorLine?.trim()) parts.push(`first error: ${firstErrorLine.trim()}`);
+    if (this.stderrBuffer.trim()) {
+      parts.push(`stderr=${JSON.stringify(tailOf(this.stderrBuffer))}`);
+    } else if (this.stdoutBuffer.trim()) {
+      parts.push(`stdout=${JSON.stringify(tailOf(this.stdoutBuffer))}`);
+    }
+    return parts.length > 0 ? ` — ${parts.join(" ")}` : "";
   }
 
   /**

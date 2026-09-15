@@ -1,16 +1,19 @@
 {
-  "name": "deepseek-harness-web-for-vscode",
-  "displayName": "DeepSeek Harness Web for VS Code",
+  "name": "deepseek-harness-for-vscode",
+  "displayName": "DeepSeek Harness for VS Code",
   "description": "Launch DeepSeek Harness and embed its Web UI inside VS Code & Antigravity — one-click start, editor-tab panel, shared instance with the browser, clipboard and theme sync.",
-  "version": "0.3.4",
-  "publisher": "floatinghotpot",
+  "version": "0.4.0",
+  "publisher": "creatorliao",
+  "author": {
+    "name": "liaohai1"
+  },
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/floatinghotpot/deepseek-harness-web-for-vscode.git"
+    "url": "https://github.com/creatorliao/deepseek-harness-for-vscode.git"
   },
   "engines": {
-    "vscode": "^1.90.0"
+    "vscode": "^1.105.0"
   },
   "categories": [
     "AI",
@@ -21,14 +24,13 @@
     "out/**",
     "media/**",
     "README.md",
+    "README.en.md",
     "LICENSE",
     "package.nls.json",
-    "package.nls.zh-cn.json",
-    "README.zh.md",
     "media/icon.png",
     "node_modules/ws/**",
     "CHANGELOG.md",
-    "CHANGELOG.zh.md"
+    "CHANGELOG.en.md"
   ],
   "contributes": {
     "commands": [
@@ -48,6 +50,11 @@
         "category": "DeepSeek Harness"
       },
       {
+        "command": "deepseek-harness-for-vscode.openChatView",
+        "title": "%command.openChatView.title%",
+        "category": "DeepSeek Harness"
+      },
+      {
         "command": "deepseek-harness-for-vscode.openPanel",
         "title": "%command.openPanel.title%",
         "category": "DeepSeek Harness"
@@ -64,6 +71,20 @@
           ],
           "default": "follow",
           "description": "%setting.themeSync.description%"
+        },
+        "deepseekHarness.dshPath": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "%setting.dshPath.description%"
+        },
+        "deepseekHarness.openTarget": {
+          "type": "string",
+          "enum": [
+            "sidebar",
+            "editorTab"
+          ],
+          "default": "sidebar",
+          "markdownDescription": "%setting.openTarget.description%"
         }
       }
     },
@@ -71,6 +92,13 @@
       "activitybar": [
         {
           "id": "deepseek-harness",
+          "title": "DeepSeek Harness",
+          "icon": "media/icon.svg"
+        }
+      ],
+      "secondarySidebar": [
+        {
+          "id": "deepseek-harness-chat",
           "title": "DeepSeek Harness",
           "icon": "media/icon.svg"
         }
@@ -83,18 +111,27 @@
           "id": "deepseek-harness.view",
           "name": "DeepSeek Harness"
         }
+      ],
+      "deepseek-harness-chat": [
+        {
+          "type": "webview",
+          "id": "deepseek-harness.chatView",
+          "name": "DeepSeek Harness"
+        }
       ]
     }
   },
   "scripts": {
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "package": "vsce package",
-    "test": "tsc -p ./ && node --test"
+    "package": "node scripts/package.js",
+    "test": "tsc -p ./ && node --test",
+    "check:dsh": "node scripts/check-dsh-latest.js",
+    "diagnose:dsh": "node scripts/diagnose-dsh.js"
   },
   "devDependencies": {
     "@types/node": "^18.19.0",
-    "@types/vscode": "^1.90.0",
+    "@types/vscode": "1.105.0",
     "@types/ws": "^8.18.1",
     "@vscode/vsce": "^3.2.1",
     "typescript": "^5.5.0"

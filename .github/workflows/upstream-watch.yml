@@ -1,0 +1,25 @@
+name: upstream-watch
+
+# 上游巡检：定时核对本扩展的 dsh 适配基线 vs npm 上最新发布的 dsh。
+# 上游一发新版而本项目尚未适配时，这个 job 会失败——把"该做适配了"摆到台面上，
+# 而不是等用户升级 dsh 后遇到白屏/插件全挂。
+#
+# 规范：docs/02-Areas/20260914-06-上游兼容规范_跟随最新官方DSH.md
+# 基线：docs/02-Areas/dsh-baseline.json
+
+on:
+  schedule:
+    # 每周一 01:00 UTC（北京时间 09:00）
+    - cron: "0 1 * * 1"
+  workflow_dispatch:
+
+jobs:
+  check-dsh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Compare baseline with published dsh versions
+        run: node scripts/check-dsh-latest.js --strict

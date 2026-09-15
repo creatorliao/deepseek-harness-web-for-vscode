@@ -9,6 +9,8 @@
 //                            / clipboard-write / clipboard-read
 //          (host -> webview): http-res / http-err / ws-open-res / ws-frame
 //                            / ws-close / clipboard-res / server-status
+// It also declares the DSH carrier hook (`__DSH_TRANSPORT__.ownsHost`) so the
+// embedded page keeps a durable settings scope — see the section below fetch.
 (function () {
   "use strict";
   var bridge = window.__DSH_BRIDGE__ || { serverBase: "" };
@@ -117,6 +119,21 @@
     if (ArrayBuffer.isView(body)) return body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength);
     return null;
   }
+
+  // ------------------------------- DSH transport-hook declaration (R20260817-01/14)
+  // The page origin is vscode-webview://…, which is not loopback, so the DSH
+  // client classifies this page as "not the operator's own machine" and puts
+  // its settings scope in memory mode: writes stay inside this document. The
+  // visible fallout is the welcome notice reappearing on every reload even
+  // though ~/.dsh/settings.yaml already holds the acknowledgement.
+  //
+  // Upstream's escape hatch is the carrier hook (dsh-client-connection,
+  // ClientTransportHooks.ownsHost): a shell that assembles its own transport
+  // declares it is the only route to the Host. That is exactly what the bridge
+  // is — the page reaches the loopback dsh process only through postMessage to
+  // the extension host. `fetch` is this very shim, which is what upstream would
+  // pick up from globalThis.fetch anyway; `ownsHost` flips isLoopback to true.
+  window.__DSH_TRANSPORT__ = { fetch: window.fetch, ownsHost: true };
 
   // ------------------------------------------------------------------- ws
   function BridgeWebSocket(url) {

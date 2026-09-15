@@ -4,7 +4,7 @@
 // dot, primary/secondary button hierarchy, focus-visible, workspace context.
 import * as vscode from "vscode";
 import { DshServerManager, type ServerInfo, type ServerState } from "./serverManager.js";
-import { workspaceRoot } from "./commands.js";
+import { workspaceRoot, dshStartOptions } from "./commands.js";
 import { t, langCode } from "./i18n.js";
 import { sessionTitleOf } from "./workspaceTracker.js";
 import { upgradeInfo, type UpgradeChannel } from "./versionCheckService.js";
@@ -19,6 +19,10 @@ export interface SessionHandlers {
   openSession: (sessionId: string) => void;
   renameSession: (sessionId: string, title: string) => Promise<void>;
   archiveSession: (sessionId: string) => void;
+  /** Open the DSH UI in the right-hand side panel (Cursor-style, never covers the editor). */
+  openChatPanel: () => void;
+  /** Open the DSH UI in a right-hand editor tab (wide surface; covers the editor). */
+  openChatEditor: () => void;
 }
 
 interface LauncherInit {
@@ -163,10 +167,17 @@ button.upgrade:hover { background: var(--vscode-list-hoverBackground, rgba(128,1
   <button class="upgrade" id="upgradeNext" style="display:${nextText ? "block" : "none"}">${nextText} →</button>
 
   <div class="actions">
-    <button class="primary" id="start" style="display:${showStart ? "block" : "none"}">${t("button.start")}</button>
+    <!-- Two explicit ways in, because they do different jobs and the user must
+         be able to pick: the right-hand PANEL is for typing while you keep
+         reading/editing (Cursor-style — it never covers the editor area), the
+         EDITOR TAB is for a wide surface. A single "open" that silently chose
+         one of them is what made the panel look broken on 2026-09-14. -->
+    <button class="primary" id="openChatPanel" style="display:${showReady ? "block" : "none"}">${t("button.openChatPanel")}</button>
     <div class="row" id="readyActions" style="display:${showReady ? "flex" : "none"}">
+      <button class="secondary" id="openChatEditor">${t("button.openChatEditor")}</button>
       <button class="secondary" id="stop">${t("button.stop")}</button>
     </div>
+    <button class="primary" id="start" style="display:${showStart ? "block" : "none"}">${t("button.start")}</button>
   </div>
 
   <div class="sessions">
@@ -192,6 +203,8 @@ button.upgrade:hover { background: var(--vscode-list-hoverBackground, rgba(128,1
   var dot = document.getElementById("dot");
   var status = document.getElementById("status");
   var start = document.getElementById("start");
+  var openChatPanel = document.getElementById("openChatPanel");
+  var openChatEditor = document.getElementById("openChatEditor");
   var ready = document.getElementById("readyActions");
   var stop = document.getElementById("stop");
   var footer = document.getElementById("footer");
@@ -202,6 +215,8 @@ button.upgrade:hover { background: var(--vscode-list-hoverBackground, rgba(128,1
   var sessionsList = document.getElementById("sessionsList");
   var archExpanded = false; // survives the 5s poll re-render (archive section)
   start.onclick = function(){ vscode.postMessage({ type: "start" }); };
+  openChatPanel.onclick = function(){ vscode.postMessage({ type: "open-chat-panel" }); };
+  openChatEditor.onclick = function(){ vscode.postMessage({ type: "open-chat-editor" }); };
   stop.onclick = function(){ vscode.postMessage({ type: "stop" }); };
   upgradeLatest.onclick = function(){ vscode.postMessage({ type: "upgrade", channel: "latest" }); };
   upgradeNext.onclick = function(){ vscode.postMessage({ type: "upgrade", channel: "next" }); };
@@ -215,7 +230,7 @@ button.upgrade:hover { background: var(--vscode-list-hoverBackground, rgba(128,1
       sessionsList.appendChild(empty);
     } else {
       items.forEach(function (it) {
-        // Gemini analysis (doc/fix/20260819-session-x-offset): the global
+        // Gemini analysis (docs/01-Projects/R20260819-02-多会话管理/10-分析_会话按钮横向偏移_by-gemini.md): the global
         // "button { width:100%; padding:7px 16px }" rule polluted BOTH session
         // buttons (only padding was overridden by .icon-btn, never width), so
         // each button was 100% wide — the flex row overflowed and the last
@@ -355,6 +370,7 @@ button.upgrade:hover { background: var(--vscode-list-hoverBackground, rgba(128,1
     statusUrl.textContent = url || "";
     statusUrl.style.display = url ? "block" : "none";
     start.style.display = state === "stopped" || state === "error" ? "block" : "none";
+    openChatPanel.style.display = state === "ready" ? "block" : "none";
     ready.style.display = state === "ready" ? "flex" : "none";
     newSession.style.display = state === "ready" ? "block" : "none";
   }
@@ -464,13 +480,17 @@ export class DshLauncherView implements vscode.WebviewViewProvider {
         });
         this.postWorkspace();
       } else if (m.type === "start") {
-        void this.manager.start({ cwd: workspaceRoot() }).catch(() => {
+        void this.manager.start(dshStartOptions()).catch(() => {
           /* state machine drives the launcher */
         });
       } else if (m.type === "stop") {
         this.manager.stop();
       } else if (m.type === "upgrade") {
         this.onUpgrade((m as { channel?: string }).channel === "next" ? "next" : "latest");
+      } else if (m.type === "open-chat-panel") {
+        this.sessionHandlers.openChatPanel();
+      } else if (m.type === "open-chat-editor") {
+        this.sessionHandlers.openChatEditor();
       } else if (m.type === "new-session") {
         this.sessionHandlers.newSession();
       } else if (m.type === "open-session" && m.sessionId) {
@@ -516,7 +536,7 @@ export class DshLauncherView implements vscode.WebviewViewProvider {
     // idempotent (already-running returns the URL), so this is safe on repeat
     // clicks; failures surface through the state machine into the launcher.
     if (!this.manager.isRunning && this.manager.state !== "starting") {
-      void this.manager.start({ cwd: workspaceRoot() }).catch(() => {
+      void this.manager.start(dshStartOptions()).catch(() => {
         /* state machine drives the launcher */
       });
     }

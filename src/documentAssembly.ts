@@ -143,12 +143,20 @@ export function rewriteBootPluginPreloads(html: string, serverBase: string): str
   return html.replace(PLUGIN_PRELOAD_RE, (_m, attr: string, url: string) => `${attr}="${serverBase}${url}"`);
 }
 
+/**
+ * Webview CSP. Two entries look over-permissive but are load-bearing:
+ * - `blob:` in img-src — the DSH client renders every image (composer preview,
+ *   transcript images, workspace image preview) from `URL.createObjectURL`, and
+ *   a Blob URL inherits the page origin rather than matching `cspSource`;
+ *   without it every pasted screenshot is refused and shows as a broken image.
+ * - `http://127.0.0.1:*` in script-src — boot-manifest plugin preloads.
+ */
 function buildCsp(cspSource: string): string {
   return [
     "default-src 'none'",
     `script-src 'unsafe-inline' 'unsafe-eval' ${cspSource} http://127.0.0.1:* http://localhost:*`,
     `style-src 'unsafe-inline' ${cspSource}`,
-    `img-src ${cspSource} data: http://127.0.0.1:*`,
+    `img-src ${cspSource} data: blob: http://127.0.0.1:*`,
     `font-src ${cspSource} data:`,
     "connect-src 'none'",
     "frame-src 'none'",

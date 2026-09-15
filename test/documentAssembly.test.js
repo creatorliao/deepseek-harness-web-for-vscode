@@ -139,6 +139,9 @@ test("assembleDocument downloads the tree and rewrites the document", async (t) 
   assert.ok(html.includes("console.log('bridge');"));
   assert.ok(html.includes('Content-Security-Policy'));
   assert.ok(html.includes("connect-src 'none'"));
+  // Regression (R20260817-01/14): the DSH client renders every image from a
+  // Blob URL, so img-src must list blob: or every pasted screenshot is refused.
+  assert.ok(html.includes("img-src https://*.vscode-webview.net data: blob: http://127.0.0.1:*"));
 
   // 6. CSS was rewritten to reference the local font.
   const css = fs.readFileSync(path.join(dist, "assets/app-e5f6.css"), "utf8");

@@ -136,6 +136,25 @@ test("clipboard shim relays writeText and resolves clipboard-res", async () => {
   await p; // resolves without rejection
 });
 
+test("bridge declares the DSH carrier hook so the page keeps host settings", async () => {
+  // Regression (R20260817-01/14): the page origin is vscode-webview://…, i.e.
+  // not loopback, so without __DSH_TRANSPORT__.ownsHost the DSH client keeps
+  // its settings scope in memory mode — the welcome notice then reappears on
+  // every reload and panel settings never reach ~/.dsh/settings.yaml.
+  const h = loadBridge();
+  const transport = h.window.__DSH_TRANSPORT__;
+  assert.equal(transport.ownsHost, true);
+  // The declared carrier must be the bridge shim, not the native fetch.
+  assert.equal(transport.fetch, h.window.fetch);
+  const p = transport.fetch(WEBVIEW_ORIGIN + "/api/settings.describe", { method: "POST", body: "{}" });
+  assert.equal(h.posted.length, 1);
+  assert.equal(h.posted[0].type, "http");
+  assert.equal(h.posted[0].url, "/api/settings.describe");
+  assert.equal(h.nativeFetchCalls.length, 0);
+  h.listeners.message.forEach((fn) => fn({ data: { type: "http-res", id: h.posted[0].id, status: 200, statusText: "OK", headers: {}, body: "{}" } }));
+  assert.equal((await p).status, 200);
+});
+
 test("matchMedia shim follows __DSH_BRIDGE__.dark and theme-preference messages", () => {
   // Pre-set __DSH_BRIDGE__ with dark:true before the script loads.
   const h = loadBridge({ serverBase: "http://x", dark: true });

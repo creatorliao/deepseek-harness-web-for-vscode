@@ -18,6 +18,8 @@ const { parseReadyLine, parseUrlLine, resolveDshPath, probeNoOpenSupport, DshSer
  * opts.version: output of `--version` (default: none — unknown version).
  * opts.recordArgs: file receiving the argv of every non-help invocation,
  * so tests can assert exactly what the manager spawns.
+ * opts.crashStderr: print this on stderr and exit 1 instead of booting —
+ * mirrors a plugin-tree failure (e.g. the 2026-09-15 koffi ABI mismatch).
  */
 function fakeDsh(dir, opts = {}) {
   const helpOut = opts.helpNoOpen ? `process.stdout.write("  --no-open  do not open the Web UI in the default browser\\n");\n` : "";
@@ -27,9 +29,14 @@ function fakeDsh(dir, opts = {}) {
     ? `if (!process.argv.includes("--help") && !process.argv.includes("--version")) require("node:fs").writeFileSync(${JSON.stringify(opts.recordArgs)}, JSON.stringify(process.argv.slice(2)));\n`
     : "";
   const urlLine = `${opts.urlLine ?? "dsh web: http://127.0.0.1:34567"}\n`;
-  const body = opts.quiet
-    ? `${help}${versionOut}${record}setInterval(() => {}, 1000);\n`
-    : `${help}${versionOut}${record}process.stdout.write(${JSON.stringify(urlLine)});\nprocess.on("SIGTERM", () => process.exit(0));\nsetInterval(() => {}, 1000);\n`;
+  const crash = opts.crashStderr
+    ? `process.stderr.write(${JSON.stringify(String(opts.crashStderr))});\nprocess.exit(1);\n`
+    : "";
+  const body = opts.crashStderr
+    ? `${help}${versionOut}${record}${crash}`
+    : opts.quiet
+      ? `${help}${versionOut}${record}setInterval(() => {}, 1000);\n`
+      : `${help}${versionOut}${record}process.stdout.write(${JSON.stringify(urlLine)});\nprocess.on("SIGTERM", () => process.exit(0));\nsetInterval(() => {}, 1000);\n`;
   if (process.platform === "win32") {
     // Windows: cmd.exe cannot run unix-shebang scripts; ship a .cmd wrapper.
     const impl = path.join(dir, "dsh-impl.js");
@@ -119,7 +126,10 @@ test("resolveDshPath handles Windows layout (npm-cache _npx, dsh.cmd)", (t) => {
   const npxDir = path.join(home, "AppData", "Local", "npm-cache", "_npx", "winhash", "node_modules", ".bin");
   fs.mkdirSync(npxDir, { recursive: true });
   fs.writeFileSync(path.join(npxDir, "dsh.cmd"), "");
-  const res = resolveDshPath(home, "win32");
+  // systemPaths:false — a real global dsh on this machine is probed FIRST and
+  // would shadow the injected home. These tests used to pass only because
+  // npmGlobalPrefix() was broken on Windows and never probed it at all.
+  const res = resolveDshPath(home, "win32", { systemPaths: false });
   assert.equal(res.path, path.join(npxDir, "dsh.cmd"));
   // Windows must NOT probe macOS-only paths (homebrew / usr-local).
   assert.ok(res.tried.every((p) => !p.includes("opt/homebrew")));
@@ -131,8 +141,29 @@ test("resolveDshPath finds either dsh or dsh.cmd on Windows when both exist", (t
   fs.mkdirSync(npxDir, { recursive: true });
   fs.writeFileSync(path.join(npxDir, "dsh"), "");
   fs.writeFileSync(path.join(npxDir, "dsh.cmd"), "");
-  const res = resolveDshPath(home, "win32");
+  const res = resolveDshPath(home, "win32", { systemPaths: false });
   assert.ok(res.path === path.join(npxDir, "dsh") || res.path === path.join(npxDir, "dsh.cmd"));
+});
+
+test("resolveDshPath emits no bare-suffix candidate for an unset $DSH_BIN", (t) => {
+  // Regression (2026-09-14): exeCandidates("") expanded to [".cmd"], so the
+  // tried list led with a bare ".cmd" and firstExisting would test it as a
+  // RELATIVE path inside the workspace folder.
+  const savedDshBin = process.env.DSH_BIN;
+  process.env.DSH_BIN = "";
+  t.after(() => {
+    if (savedDshBin === undefined) delete process.env.DSH_BIN;
+    else process.env.DSH_BIN = savedDshBin;
+  });
+  const res = resolveDshPath(tmpdir(t), "win32", { systemPaths: false });
+  assert.ok(
+    !res.tried.includes(".cmd"),
+    `tried listed a bare suffix: ${res.tried.join(", ")}`
+  );
+  assert.ok(
+    res.tried.every((p) => p.length > 1),
+    `tried listed a stub entry: ${res.tried.join(", ")}`
+  );
 });
 
 test("start() reaches ready via stdout URL and stop() exits cleanly", async (t) => {
@@ -230,6 +261,32 @@ test("start() rejects on timeout when no URL line arrives", async (t) => {
   await exited;
 });
 
+test("start() timeout quotes what the child actually printed", async (t) => {
+  // Regression (2026-09-14): the timeout used to report only
+  // "did not become ready within Nms", which is indistinguishable from a hang —
+  // the real cause (startup simply slower than the budget) had to be
+  // reproduced outside the editor. The message must now carry the evidence.
+  const dir = tmpdir(t);
+  const bin = fakeDsh(dir, { urlLine: "booting, please wait..." });
+  const manager = new DshServerManager();
+  const exited = new Promise((r) => manager.once("exit", r));
+  await assert.rejects(
+    // Generous budget: the fake dsh is a real `node` process, and on a loaded
+    // Windows box node startup alone can exceed 1s — too tight a budget makes
+    // the child print nothing and the stdout assertion flaky.
+    manager.start({ dshBin: bin, cwd: dir, readyTimeoutMs: 3000 }),
+    (err) => {
+      assert.match(err.message, /did not become ready within 3000ms/, err.message);
+      assert.match(err.message, /booting, please wait/, err.message);
+      assert.match(err.message, /bin=/, err.message);
+      assert.match(err.message, /stderr=/, err.message);
+      return true;
+    }
+  );
+  assert.equal(manager.state, "error");
+  await exited;
+});
+
 test("start() rejects with a helpful message when the binary is missing", async (t) => {
   const manager = new DshServerManager();
   await assert.rejects(
@@ -237,6 +294,36 @@ test("start() rejects with a helpful message when the binary is missing", async 
     IS_WIN ? /exited before ready/ : /dsh not found/
   );
   assert.equal(manager.state, "error");
+});
+
+test("start() quotes the child's own error when it exits before ready", async (t) => {
+  // Regression guard for the 2026-09-15 koffi ABI mismatch: `dsh web` died with
+  // code=1 and printed the reason only on stderr, so the editor surfaced a bare
+  // exit code and the cause had to be re-derived by hand. Whatever the child
+  // says must ride along — including the FIRST error line, because a plugin-tree
+  // crash is a long AggregateError whose tail is nothing but closing braces.
+  const dir = tmpdir(t);
+  const bin = fakeDsh(dir, {
+    crashStderr:
+      "Error: dsh: plugin tree failed to load: failed to apply loader entry include (cordis:include)\n" +
+      "    at async Include._apply (file:///x/dsh-app-boot/lib/index.js:240:3)\n" +
+      "  [cause]: Error: Mismatched native Koffi modules\n" +
+      "Node.js v24.19.0\n",
+  });
+  const manager = new DshServerManager();
+  const exited = new Promise((r) => manager.once("exit", r));
+  await assert.rejects(
+    manager.start({ dshBin: bin, cwd: dir }),
+    (err) => {
+      assert.match(err.message, /exited before ready \(code=1, signal=null\)/, err.message);
+      assert.match(err.message, /first error: Error: dsh: plugin tree failed to load/, err.message);
+      assert.match(err.message, /stderr=/, err.message);
+      assert.match(err.message, /Mismatched native Koffi modules/, err.message);
+      return true;
+    }
+  );
+  assert.equal(manager.state, "error");
+  await exited;
 });
 
 test("stop() during the ready window settles the promise and stays stopped (no late error)", async (t) => {

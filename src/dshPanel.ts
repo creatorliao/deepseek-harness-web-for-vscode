@@ -1,82 +1,17 @@
 // DeepSeek Harness editor panel (T8, revised 2026-08-17: sidebar -> editor
 // tab, display style aligned with Claude Code) + server-status overlay (T9).
+// The overlay markup, theme probe and dist-cache path are shared with the
+// secondary-side-bar view and live in dshUi.ts.
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import { DshServerManager, type ServerInfo } from "./serverManager.js";
 import { assembleDocument } from "./documentAssembly.js";
 import { BridgeHost } from "./bridgeHost.js";
-import { workspaceRoot } from "./commands.js";
-import { t, langCode } from "./i18n.js";
+import { dshStartOptions } from "./commands.js";
+import { distRootPath, isDarkTheme, placeholderHtml, statusChromeHtml } from "./dshUi.js";
 
-const DIST_DIR_NAME = "dsh-dist";
 const PANEL_TITLE = "DeepSeek Harness";
-
-function isDarkTheme(): boolean {
-  const k = vscode.window.activeColorTheme.kind;
-  return k === vscode.ColorThemeKind.Dark || k === vscode.ColorThemeKind.HighContrast;
-}
-
-/** Minimal shell shown before the server is ready (never a blank panel). */
-function placeholderHtml(): string {
-  return `<!DOCTYPE html>
-<html lang="${langCode()}">
-<head>
-<meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
-<style>html,body{height:100%;margin:0;background:var(--vscode-editor-background)}</style>
-</head>
-<body>${statusChromeHtml()}
-<script>
-(function(){
-  var overlay = document.getElementById("dsh-overlay");
-  var msg = document.getElementById("dsh-msg");
-  var btn = document.getElementById("dsh-start");
-  overlay.hidden = false;
-  msg.textContent = ${JSON.stringify(t("overlay.stopped"))};
-  btn.style.display = "inline-block";
-})();
-</script>
-</body>
-</html>`;
-}
-
-/** Overlay + status listener injected into the assembled document (T9). */
-function statusChromeHtml(): string {
-  return `
-<style>
-#dsh-overlay{position:fixed;inset:0;display:flex;flex-direction:column;gap:12px;align-items:center;justify-content:center;
-background:var(--vscode-editor-background);color:var(--vscode-foreground);
-font-family:var(--vscode-font-family);font-size:13px;text-align:center;padding:24px;z-index:9999}
-#dsh-overlay[hidden]{display:none}
-#dsh-start{background:var(--vscode-button-background);color:var(--vscode-button-foreground);
-border:none;border-radius:3px;padding:6px 16px;font-family:var(--vscode-font-family);font-size:13px;cursor:pointer}
-#dsh-start:hover{background:var(--vscode-button-hoverBackground)}
-</style>
-<div id="dsh-overlay" hidden>
-  <div id="dsh-msg">DeepSeek Harness</div>
-  <button id="dsh-start" style="display:none">${t("button.start")}</button>
-</div>
-<script>
-(function(){
-  var overlay = document.getElementById("dsh-overlay");
-  var msg = document.getElementById("dsh-msg");
-  var btn = document.getElementById("dsh-start");
-  var vscode = acquireVsCodeApi();
-  btn.onclick = function () { vscode.postMessage({ type: "start" }); };
-  window.addEventListener("message", function (e) {
-    var m = e.data;
-    if (!m || m.type !== "server-status") return;
-    if (m.state === "ready") { overlay.hidden = true; return; }
-    overlay.hidden = false;
-    btn.style.display = m.state === "stopped" || m.state === "error" ? "inline-block" : "none";
-    if (m.state === "starting") msg.textContent = ${JSON.stringify(t("overlay.starting"))};
-    else if (m.state === "stopped") msg.textContent = ${JSON.stringify(t("overlay.stopped"))};
-    else if (m.state === "error") msg.textContent = ${JSON.stringify(t("overlay.error", { message: "{message}" }))}.replace("{message}", m.message || "unknown");
-  });
-})();
-</script>`;
-}
 
 /** One editor-tab WebviewPanel hosting the DSH UI over the transport bridge. */
 export class DshPanel {
@@ -133,7 +68,7 @@ export class DshPanel {
       {
         enableScripts: true,
         retainContextWhenHidden: true,
-        localResourceRoots: [vscode.Uri.file(this.distRootPath())],
+        localResourceRoots: [vscode.Uri.file(distRootPath(this.context))],
       }
     );
     // Tab icon: WebviewPanel.iconPath is a settable property (unlike options).
@@ -149,7 +84,7 @@ export class DshPanel {
     panel.webview.onDidReceiveMessage((msg) => {
       const m = msg as { type?: string };
       if (m.type === "start") {
-        void this.manager.start({ cwd: workspaceRoot() }).catch(() => {
+        void this.manager.start(dshStartOptions()).catch(() => {
           /* state machine drives the overlay */
         });
       } else if (m.type === "stop") {
@@ -197,10 +132,6 @@ export class DshPanel {
     this.panel?.dispose();
   }
 
-  private distRootPath(): string {
-    return path.join(this.context.globalStorageUri.fsPath, DIST_DIR_NAME);
-  }
-
   private async refresh(): Promise<void> {
     const url = this.manager.serverUrl;
     if (!url || !this.panel) return;
@@ -215,7 +146,7 @@ export class DshPanel {
         // dsh 0.1.2+ serves / behind the browser-session cookie; without it the
         // index fetch (and any fenced asset) returns 401 and the panel errors.
         cookie: this.manager.authCookieHeader,
-        distRootPath: this.distRootPath(),
+        distRootPath: distRootPath(this.context),
         asWebviewUri: (p) => webview.asWebviewUri(vscode.Uri.file(p)).toString(),
         bridgeClientJs: bridgeJs,
         cspSource: webview.cspSource,
