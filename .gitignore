@@ -5,8 +5,9 @@ node_modules/
 # Build output
 out/
 
-# Extension packages
+# Extension packages (dist/ holds exactly one vsix: the newest build)
 *.vsix
+dist/
 
 # Spike artifacts (throwaway Phase 0 verification, removed after MVP)
 .spike-dsh-home/

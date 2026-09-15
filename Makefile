@@ -2,11 +2,17 @@
 # Tokens are read from the environment only (already exported in ~/.zshrc);
 # this file stores no secrets. Every recipe that uses a token starts with @
 # so the command line (and the token value) is never echoed to the terminal.
+#
+# NOTE: this Makefile is POSIX/bash-only (SHELL/test/rm). On Windows run it from
+# Git Bash / WSL, or call the equivalent npm script directly.
+# NOTE: the VS Code Marketplace half of the publish targets is currently
+# unavailable — the listing was removed on 2026-08-26 and is not reinstated.
+# Use `make publish-ovsx`. See docs/02-Areas/20260914-07-发布与版本规范.md.
 
 SHELL := /bin/bash
 NPM := npm --cache .npm-cache
 VERSION ?= $(shell node -p "require('./package.json').version")
-VSIX ?= $(shell node -p "require('./package.json').name")-$(VERSION).vsix
+VSIX ?= $(shell node -p "const p=require('./package.json'); 'dist/'+p.publisher+'.'+p.name+'-'+p.version+'.vsix'")
 
 .PHONY: help install compile watch test package publish publish-vscode publish-ovsx publish-vscode-only publish-ovsx-only namespace tag clean
 
@@ -25,7 +31,7 @@ watch: ## Watch and recompile
 test: ## Run unit tests (compiles first; node:test)
 	$(NPM) test
 
-package: compile ## Build the vsix (README/LICENSE/nls/icon included)
+package: compile ## Build the vsix into dist/ (exactly one file, version in the name)
 	$(NPM) run package
 
 # -- Publishing (tokens from env vars; fail loudly when missing) ------------
@@ -49,16 +55,16 @@ publish-ovsx: package ## Publish to Open VSX (needs OVSX_TOKEN, exported in ~/.z
 	@$(MAKE) publish-ovsx-only
 
 publish-ovsx-only: ## (internal) Publish prebuilt vsix to Open VSX — no package rebuild
-	@test -n "$$OVSX_TOKEN" || { echo "Error: OVSX_TOKEN is not set (see doc/publishing.md)"; exit 1; }
+	@test -n "$$OVSX_TOKEN" || { echo "Error: OVSX_TOKEN is not set (see docs/02-Areas/20260914-08-Open-VSX发布手册.md)"; exit 1; }
 	@npx --yes ovsx publish $(VSIX) -p "$$OVSX_TOKEN"
 
 namespace: ## Create the Open VSX namespace (needs OVSX_TOKEN)
 	@test -n "$$OVSX_TOKEN" || { echo "Error: OVSX_TOKEN is not set"; exit 1; }
-	@npx --yes ovsx create-namespace floatinghotpot -p "$$OVSX_TOKEN"
+	@npx --yes ovsx create-namespace creatorliao -p "$$OVSX_TOKEN"
 
 tag: ## Create git tag v<version> (does not push)
 	git tag v$(VERSION)
 
-clean: ## Remove build artifacts (vsix / out)
-	rm -f *.vsix
+clean: ## Remove build artifacts (dist / out)
+	rm -rf dist
 	rm -rf out

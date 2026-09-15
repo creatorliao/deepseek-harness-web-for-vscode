@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>侧边栏版式重设计 · 预览（现状 vs 新版）</title>
+<!--
+  这是「R20260915-01 侧边栏入口与打开方式」方案的可视化设计稿（非产品代码）。
+  - 左栏「现状」：照抄 src/launcherView.ts 的 HTML 结构与 CSS（0.3.4）。
+  - 右栏「新版」：方案 A 的结构与 CSS，实现时可直接从这里取。
+  - 顶部滑杆改栏宽（170–340px），用来验证最窄栏下标签是否溢出（验收标准 A4）。
+  - 状态按钮切换新版的动作区/状态行（验收标准 A5）。
+-->
+<style>
+  /* ============ 预览壳（不属于设计稿本体） ============ */
+  :root {
+    --sbw: 300px;
+    --app-bg: #141414;
+    --app-fg: #e6e6e6;
+    --app-muted: #a0a0a0;
+    /* VS Code 主题令牌：深色取值作为无宿主时的兜底 */
+    --vscode-font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+    --vscode-font-size: 13px;
+    --vscode-foreground: #cccccc;
+    --vscode-descriptionForeground: #9d9d9d;
+    --vscode-sideBar-background: #1f1f1f;
+    --vscode-panel-border: #2b2b2b;
+    --vscode-widget-border: #454545;
+    --vscode-button-background: #0078d4;
+    --vscode-button-foreground: #ffffff;
+    --vscode-button-hoverBackground: #026ec1;
+    --vscode-button-secondaryBackground: #3a3d41;
+    --vscode-button-secondaryForeground: #cccccc;
+    --vscode-button-secondaryHoverBackground: #45494e;
+    --vscode-focusBorder: #007fd4;
+    --vscode-list-hoverBackground: rgba(128, 128, 128, .12);
+    --vscode-charts-green: #3fb950;
+    --vscode-charts-blue: #3794ff;
+    --vscode-charts-red: #f85149;
+  }
+  body.light {
+    --app-bg: #f3f3f3; --app-fg: #1f1f1f; --app-muted: #616161;
+    --vscode-foreground: #3b3b3b;
+    --vscode-descriptionForeground: #717171;
+    --vscode-sideBar-background: #f8f8f8;
+    --vscode-panel-border: #e5e5e5;
+    --vscode-widget-border: #cecece;
+    --vscode-button-background: #005fb8;
+    --vscode-button-hoverBackground: #0258a8;
+    --vscode-button-secondaryBackground: #e5e5e5;
+    --vscode-button-secondaryForeground: #3b3b3b;
+    --vscode-button-secondaryHoverBackground: #d9d9d9;
+    --vscode-list-hoverBackground: rgba(0, 0, 0, .06);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 18px 22px 48px;
+    background: var(--app-bg); color: var(--app-fg);
+    font-family: var(--vscode-font-family); font-size: 13px;
+  }
+  .shellbar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 16px; }
+  .shellbar h1 { font-size: 14px; margin: 0; font-weight: 600; }
+  .hint { font-size: 12px; color: var(--app-muted); }
+  .ctrl { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--app-muted); margin-left: auto; flex-wrap: wrap; }
+  .ctrl input[type="range"] { width: 130px; }
+  .ctrl button {
+    font: inherit; font-size: 12px; padding: 4px 10px; cursor: pointer;
+    background: transparent; color: var(--app-fg);
+    border: 1px solid var(--vscode-widget-border); border-radius: 4px;
+  }
+  .ctrl button.active { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border-color: transparent; }
+  .ctrl .sep { width: 1px; height: 18px; background: var(--vscode-widget-border); }
+  .stage { display: flex; gap: 26px; align-items: flex-start; flex-wrap: wrap; }
+  .col { display: flex; flex-direction: column; gap: 8px; }
+  .caption { font-size: 11.5px; letter-spacing: .4px; color: var(--app-muted); }
+
+  /* 侧边栏容器：与生产一致的 padding / gap / 纵向 flex */
+  .sidebar {
+    width: var(--sbw); min-height: 600px;
+    display: flex; flex-direction: column; gap: 16px;
+    padding: 16px;
+    background: var(--vscode-sideBar-background); color: var(--vscode-foreground);
+    border: 1px solid var(--vscode-panel-border); border-radius: 6px;
+    overflow: hidden;
+  }
+  .header { display: flex; align-items: center; gap: 10px; }
+  .logo {
+    width: 28px; height: 28px; border-radius: 7px; flex: none; background: #4D6BFE;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .title { font-size: 14px; font-weight: 600; line-height: 1.3; }
+  .subtitle { font-size: 12px; color: var(--vscode-descriptionForeground); }
+  .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+  .dot.ready { background: var(--vscode-charts-green); }
+  .dot.stopped { background: var(--vscode-descriptionForeground); opacity: .55; }
+  .dot.starting { background: var(--vscode-charts-yellow, #d29922); }
+  .dot.error { background: var(--vscode-charts-red); }
+
+  /* 会话行：现状与新版完全一致（本轮不动它） */
+  .sessions-list { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .srow {
+    position: relative; display: flex; align-items: center; gap: 6px;
+    width: 100%; height: 28px; padding: 0 86px 0 6px;
+    border-radius: 4px; overflow: hidden; cursor: pointer;
+  }
+  .srow:hover { background: var(--vscode-list-hoverBackground); }
+  .srow .sdot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--vscode-charts-green); }
+  .srow .sname { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; line-height: 28px; }
+  .srow .sacts { position: absolute; right: 4px; top: 0; bottom: 0; display: flex; align-items: center; gap: 8px; }
+  .srow .stime { font-size: 11px; color: var(--vscode-descriptionForeground); white-space: nowrap; margin-right: 2px; }
+  .srow .ibtn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 20px; height: 20px; min-width: 20px; padding: 0; margin: 0;
+    border: none; background: transparent; color: var(--vscode-descriptionForeground);
+    cursor: pointer; border-radius: 3px;
+  }
+  .srow .ibtn:hover { background: var(--vscode-list-hoverBackground); color: var(--vscode-foreground); }
+  .arch { border-top: 1px solid var(--vscode-widget-border); margin-top: 4px; padding: 6px 6px 2px;
+          font-size: 11.5px; color: var(--vscode-descriptionForeground); }
+
+  /* ============ 左：现状（照抄 src/launcherView.ts） ============ */
+  .mock-old .status {
+    display: flex; align-items: flex-start; gap: 8px; padding: 10px 12px; border-radius: 6px;
+    border: 1px solid var(--vscode-widget-border);
+    background: var(--vscode-sideBar-background); font-size: 12.5px; word-break: break-all;
+  }
+  .mock-old .statusText { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .mock-old .statusUrl { font-size: 11px; color: var(--vscode-descriptionForeground); word-break: break-all; }
+  .mock-old .actions { display: flex; flex-direction: column; gap: 8px; }
+  .mock-old .row { display: flex; flex-direction: column; gap: 8px; }
+  .mock-old button {
+    display: block; width: 100%; font-family: inherit; font-size: 13px; cursor: pointer;
+    border: none; border-radius: 4px; padding: 7px 16px; text-align: center;
+  }
+  .mock-old button.primary { background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
+  .mock-old button.primary:hover { background: var(--vscode-button-hoverBackground); }
+  .mock-old button.secondary { background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); }
+  .mock-old button.secondary:hover { background: var(--vscode-button-secondaryHoverBackground); }
+  .mock-old button.upgrade {
+    background: transparent; border: 1px solid var(--vscode-widget-border); font-size: 12px;
+    color: var(--vscode-charts-blue);
+  }
+  .mock-old .sessions { display: flex; flex-direction: column; gap: 8px; }
+  .mock-old .sessions-title { font-size: 11px; font-weight: 600; color: var(--vscode-descriptionForeground); text-transform: uppercase; letter-spacing: .5px; }
+  .mock-old .footer { margin-top: auto; padding-top: 8px; border-top: 1px solid var(--vscode-widget-border);
+                      font-size: 11.5px; color: var(--vscode-descriptionForeground); word-break: break-all; }
+
+  /* ============ 右：新版设计（方案 A） ============ */
+  .mock-new .open-group { display: flex; flex-direction: column; gap: 6px; }
+  .mock-new .btn {
+    display: flex; align-items: center; gap: 8px; width: 100%;
+    padding: 7px 10px; font: inherit; font-size: 13px; text-align: left;
+    border: none; border-radius: 4px; cursor: pointer;
+    background: var(--vscode-button-background); color: var(--vscode-button-foreground);
+  }
+  .mock-new .btn:hover { background: var(--vscode-button-hoverBackground); }
+  .mock-new .btn.secondary { background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); }
+  .mock-new .btn.secondary:hover { background: var(--vscode-button-secondaryHoverBackground); }
+  .mock-new .btn:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
+  .mock-new .btn[disabled] { opacity: .55; cursor: default; }
+  .mock-new .btn svg { flex: none; opacity: .92; }
+  .mock-new .btn .lbl { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mock-new .err { color: var(--vscode-charts-red); font-size: 12px; padding: 0 2px; }
+  .mock-new .sessions { display: flex; flex-direction: column; gap: 6px; }
+  .mock-new .sessions-head { display: flex; align-items: center; justify-content: space-between; }
+  .mock-new .sessions-title { font-size: 11px; font-weight: 600; color: var(--vscode-descriptionForeground); text-transform: uppercase; letter-spacing: .5px; }
+  .mock-new .sessions-head .ibtn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 20px; height: 20px; padding: 0; border: none; border-radius: 3px;
+    background: transparent; color: var(--vscode-descriptionForeground);
+    font: inherit; font-size: 14px; line-height: 1; cursor: pointer;
+  }
+  .mock-new .sessions-head .ibtn:hover { background: var(--vscode-list-hoverBackground); color: var(--vscode-foreground); }
+  .mock-new .bottom {
+    margin-top: auto; display: flex; flex-direction: column; gap: 6px;
+    padding-top: 8px; border-top: 1px solid var(--vscode-widget-border);
+  }
+  .mock-new .update-row {
+    display: flex; align-items: center; gap: 6px; width: 100%;
+    padding: 5px 6px; font: inherit; font-size: 12px; text-align: left;
+    background: transparent; border: none; border-radius: 4px; cursor: pointer;
+    color: var(--vscode-charts-blue);
+  }
+  .mock-new .update-row:hover { background: var(--vscode-list-hoverBackground); }
+  .mock-new .update-row svg { flex: none; opacity: .85; }
+  .mock-new .update-row .txt { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mock-new .update-row .chev { margin-left: auto; opacity: .7; font-size: 14px; line-height: 1; }
+  .mock-new .status-row { display: flex; align-items: center; gap: 8px; font-size: 12.5px; }
+  .mock-new .status-row .status-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mock-new .link-btn {
+    background: transparent; border: none; color: var(--vscode-descriptionForeground);
+    font: inherit; font-size: 12px; padding: 3px 6px; border-radius: 3px; cursor: pointer;
+  }
+  .mock-new .link-btn:hover { background: var(--vscode-list-hoverBackground); color: var(--vscode-foreground); }
+  .mock-new .status-url { font-size: 11px; color: var(--vscode-descriptionForeground); word-break: break-all; padding-left: 17px; }
+  .mock-new .footer { padding-top: 2px; font-size: 11.5px; color: var(--vscode-descriptionForeground); word-break: break-all; }
+
+  /* 状态矩阵：同一份结构，按 data-state 显示对应变体 */
+  .mock-new:not([data-state="ready"]) .only-ready,
+  .mock-new:not([data-state="stopped"]) .only-stopped,
+  .mock-new:not([data-state="starting"]) .only-starting,
+  .mock-new:not([data-state="error"]) .only-error { display: none; }
+
+  .notes { max-width: 820px; margin-top: 26px; }
+  .notes h2 { font-size: 13px; margin: 0 0 8px; }
+  .notes ol { margin: 0; padding-left: 20px; font-size: 12.5px; line-height: 1.75; color: var(--app-fg); }
+  .notes code { background: var(--vscode-list-hoverBackground); padding: 1px 4px; border-radius: 3px; font-size: 11.5px; }
+</style>
+</head>
+<body>
+
+<div class="shellbar">
+  <h1>侧边栏版式重设计 · 预览</h1>
+  <span class="hint">左：现状（0.3.4）　右：新版设计（方案 A）</span>
+  <div class="ctrl">
+    <label>栏宽 <input id="w" type="range" min="170" max="340" value="300"><span id="wv">300px</span></label>
+    <span class="sep"></span>
+    <span>新版状态</span>
+    <button data-setstate="ready" class="active">运行中</button>
+    <button data-setstate="stopped">未启动</button>
+    <button data-setstate="starting">启动中</button>
+    <button data-setstate="error">错误</button>
+    <span class="sep"></span>
+    <button id="theme">切换浅色</button>
+  </div>
+</div>
+
+<div class="stage">
+
+  <!-- ==================== 左：现状 ==================== -->
+  <div class="col">
+    <div class="caption">现状 · 高频动作被状态/更新压在下面，五个全宽居中按钮平铺</div>
+    <div class="sidebar mock-old">
+      <div class="header">
+        <div class="logo">
+          <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M6 4c4 0 6 2.2 6 5.2S10 14 6 14c1.6 1.4 4 2 6.6 1.6C16 15 18.6 12.6 19 9.4c.2-1.6-.2-3-.8-4.2.9 1.1 1.6 2.6 1.8 4.4.5 4.6-2.6 8.6-7.2 9.4-3.6.6-7-.8-9-3.6C2.2 13 2 9.8 3.2 7.2 4 5.4 5 4 6 4Z" fill="#fff"/>
+          </svg>
+        </div>
+        <div>
+          <div class="title">DeepSeek Harness</div>
+          <div class="subtitle">extension v0.3.4</div>
+        </div>
+      </div>
+
+      <div class="status">
+        <span class="dot ready" style="margin-top:4px"></span>
+        <div class="statusText">
+          <span>dsh 0.1.5-rc.1 运行中</span>
+          <span class="statusUrl">http://127.0.0.1:16257</span>
+        </div>
+      </div>
+
+      <button class="upgrade">预览版更新（next）：0.1.5-rc.2 →</button>
+
+      <div class="actions">
+        <button class="primary">在右侧面板打开</button>
+        <div class="row">
+          <button class="secondary">在编辑器打开</button>
+          <button class="secondary">停止 DeepSeek Harness</button>
+        </div>
+      </div>
+
+      <div class="sessions">
+        <button class="secondary">＋新建会话</button>
+        <span class="sessions-title">会话</span>
+        <div class="sessions-list">
+          <div class="srow"><span class="sdot"></span><span class="sname">新会话</span>
+            <span class="sacts"><span class="stime">1m</span><button class="ibtn">✎</button><button class="ibtn">✕</button></span></div>
+          <div class="srow"><span class="sdot"></span><span class="sname">新会话</span>
+            <span class="sacts"><span class="stime">1m</span><button class="ibtn">✎</button><button class="ibtn">✕</button></span></div>
+          <div class="srow"><span class="sdot"></span><span class="sname">截图问题记录与图片回显修复</span>
+            <span class="sacts"><span class="stime">5m</span><button class="ibtn">✎</button><button class="ibtn">✕</button></span></div>
+          <div class="srow"><span class="sdot"></span><span class="sname">重构项目环境并整理文档结构</span>
+            <span class="sacts"><span class="stime">22h</span><button class="ibtn">✎</button><button class="ibtn">✕</button></span></div>
+          <div class="arch">▸ 归档 (1)</div>
+        </div>
+      </div>
+
+      <div class="footer">工作区: deepseek-harness-web-for-vscode</div>
+    </div>
+  </div>
+
+  <!-- ==================== 右：新版 ==================== -->
+  <div class="col">
+    <div class="caption">新版设计 · 动作区（一主两次）→ 会话区 → 底部区（状态/更新/停止）</div>
+    <div class="sidebar mock-new" data-state="ready">
+      <div class="header">
+        <div class="logo">
+          <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M6 4c4 0 6 2.2 6 5.2S10 14 6 14c1.6 1.4 4 2 6.6 1.6C16 15 18.6 12.6 19 9.4c.2-1.6-.2-3-.8-4.2.9 1.1 1.6 2.6 1.8 4.4.5 4.6-2.6 8.6-7.2 9.4-3.6.6-7-.8-9-3.6C2.2 13 2 9.8 3.2 7.2 4 5.4 5 4 6 4Z" fill="#fff"/>
+          </svg>
+        </div>
+        <div>
+          <div class="title">DeepSeek Harness</div>
+          <div class="subtitle">extension v0.3.4</div>
+        </div>
+      </div>
+
+      <!-- ① 动作区 -->
+      <div class="open-group">
+        <div class="only-ready" style="display:contents">
+          <button class="btn">
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" aria-hidden="true">
+              <rect x="1.6" y="2.6" width="12.8" height="10.8" rx="1.4"/><path d="M9.8 2.6v10.8"/><path d="M11.6 5.4h1.4M11.6 7.6h1.4M11.6 9.8h1.4"/>
+            </svg>
+            <span class="lbl">在右侧面板打开</span>
+          </button>
+          <button class="btn secondary" style="margin-top:6px">
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true">
+              <rect x="1.6" y="2.6" width="12.8" height="10.8" rx="1.4"/><path d="M8 2.6v10.8"/>
+            </svg>
+            <span class="lbl">在编辑器打开</span>
+          </button>
+          <button class="btn secondary" style="margin-top:6px">
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true">
+              <circle cx="8" cy="8" r="6.2"/><path d="M1.8 8h12.4"/><ellipse cx="8" cy="8" rx="2.6" ry="6.2"/>
+            </svg>
+            <span class="lbl">在浏览器中打开</span>
+          </button>
+        </div>
+        <button class="btn only-stopped">
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4.5 2.8 13 8l-8.5 5.2z"/></svg>
+          <span class="lbl">启动 DeepSeek Harness</span>
+        </button>
+        <button class="btn only-starting" disabled>
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><circle cx="8" cy="8" r="5.4"/></svg>
+          <span class="lbl">启动中…</span>
+        </button>
+        <button class="btn only-error">
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4.5 2.8 13 8l-8.5 5.2z"/></svg>
+          <span class="lbl">启动 DeepSeek Harness</span>
+        </button>
+        <div class="err only-error">错误：dsh exited with code 1</div>
+      </div>
+
+      <!-- ② 会话区 -->
+      <div class="sessions">
+        <div class="sessions-head">
+          <span class="sessions-title">会话</span>
+          <button class="ibtn" title="＋新建会话" aria-label="＋新建会话">＋</button>
+        </div>
+        <div class="sessions-list">
+          <div class="srow"><span class="sdot"></span><span class="sname">新会话</span>
+            <span class="sacts"><span class="stime">1m</span><button class="ibtn">✎</button><button class="ibtn">✕</button></span></div>
+          <div class="srow"><span class="sdot"></span><span class="sname">新会话</span>
+            <span class="sacts"><span class="stime">1m</span><button class="ibtn">✎</button><button class="ibtn">✕</button></span></div>
+          <div class="srow"><span class="sdot"></span><span class="sname">截图问题记录与图片回显修复</span>
+            <span class="sacts"><span class="stime">5m</span><button class="ibtn">✎</button><button class="ibtn">✕</button></span></div>
+          <div class="srow"><span class="sdot"></span><span class="sname">重构项目环境并整理文档结构</span>
+            <span class="sacts"><span class="stime">22h</span><button class="ibtn">✎</button><button class="ibtn">✕</button></span></div>
+          <div class="arch">▸ 归档 (1)</div>
+        </div>
+      </div>
+
+      <!-- ③ 底部区 -->
+      <div class="bottom">
+        <div class="only-ready" style="display:contents">
+          <button class="update-row">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" aria-hidden="true">
+              <path d="M8 12.8V3.6"/><path d="M4.6 7 8 3.6 11.4 7"/>
+            </svg>
+            <span class="txt">预览版更新（next）：0.1.5-rc.2</span>
+            <span class="chev">›</span>
+          </button>
+        </div>
+        <div class="status-row only-ready">
+          <span class="dot ready"></span>
+          <span class="status-text">dsh 0.1.5-rc.1 运行中</span>
+          <button class="link-btn">停止</button>
+        </div>
+        <div class="status-row only-stopped">
+          <span class="dot stopped"></span><span class="status-text">未启动</span>
+        </div>
+        <div class="status-row only-starting">
+          <span class="dot starting"></span><span class="status-text">启动中…</span>
+        </div>
+        <div class="status-row only-error">
+          <span class="dot error"></span><span class="status-text">错误：dsh exited with code 1</span>
+        </div>
+        <div class="status-url only-ready">http://127.0.0.1:16257</div>
+        <div class="footer">工作区: deepseek-harness-web-for-vscode</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="notes">
+  <h2>这一版改了什么（对照左侧）</h2>
+  <ol>
+    <li><b>频率重排</b>：状态卡与更新按钮从首屏移到最底部；首屏从上到下是「打开入口 → 会话列表」。</li>
+    <li><b>打开入口成组、分主次</b>：一个 primary（右侧面板，默认形态）+ 两个 secondary（编辑器 / 浏览器），三者左对齐、带前置图标，起始边界成一条竖线，扫读成本最低。</li>
+    <li><b>新增第三个入口</b>「在浏览器中打开」——复用已有命令能力（<code>manager.browserUrl</code>，带启动 token）。</li>
+    <li><b>停止与状态同行</b>：被动状态 + 唯一能改变它的动作就近成组，不再夹在打开入口中间。</li>
+    <li><b>更新提示降级为信息行</b>：不再是和主操作同等重量的描边大按钮；仍保留 latest / next 两个渠道可分别点击。</li>
+    <li><b>会话区上移</b>：「＋新建会话」并入「会话」标题行，省掉一整行（约 36px）。会话行本身一行未动。</li>
+    <li><b>窄栏验证</b>：把滑杆拖到最左（170px）——「在浏览器中打开」仍单行可读，不溢出、不换行（竖排三步的取舍依据）。</li>
+    <li><b>状态矩阵</b>：点顶部「未启动 / 启动中 / 错误」，动作区始终<b>只有一个主操作</b>，不会出现点不动的打开入口。</li>
+  </ol>
+</div>
+
+<script>
+  var w = document.getElementById("w");
+  var wv = document.getElementById("wv");
+  w.oninput = function () {
+    document.documentElement.style.setProperty("--sbw", w.value + "px");
+    wv.textContent = w.value + "px";
+  };
+
+  var sb = document.querySelector(".mock-new");
+  var stateBtns = document.querySelectorAll("[data-setstate]");
+  stateBtns.forEach(function (b) {
+    b.onclick = function () {
+      sb.setAttribute("data-state", b.dataset.setstate);
+      stateBtns.forEach(function (x) { x.classList.toggle("active", x === b); });
+    };
+  });
+
+  var theme = document.getElementById("theme");
+  theme.onclick = function () {
+    var light = document.body.classList.toggle("light");
+    theme.textContent = light ? "切换深色" : "切换浅色";
+  };
+</script>
+</body>
+</html>

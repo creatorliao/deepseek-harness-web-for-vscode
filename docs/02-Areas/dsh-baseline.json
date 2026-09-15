@@ -1,0 +1,116 @@
+{
+  "$schema-comment": "本项目适配的上游 @deepseek-ai/dsh 版本基线。这是版本相关事实的唯一机器可读源；scripts/check-dsh-latest.js 读取它。人工维护的说明见 docs/02-Areas/20260914-06-上游兼容规范_跟随最新官方DSH.md。",
+  "extensionVersion": "0.4.0",
+  "minDshVersion": "0.1.2-rc.1",
+  "minDshVersionNote": "硬门：src/serverManager.ts 的 MIN_DSH_VERSION；低于此版本直接拒绝启动。改动必须同步 README.md / README.en.md / CHANGELOG.md。",
+  "verified": [
+    {
+      "version": "0.1.2-rc.1",
+      "verifiedOn": "2026-09-07",
+      "depth": "VS Code 实测",
+      "evidence": "docs/01-Projects/R20260820-01-上游DSH版本适配/10-修复_dsh0.1.2-rc1认证与RPC.md"
+    },
+    {
+      "version": "0.1.5-rc.1",
+      "verifiedOn": "2026-09-10",
+      "depth": "协议探针",
+      "evidence": "commit 7918816"
+    },
+    {
+      "version": "0.1.5-rc.2",
+      "verifiedOn": "2026-09-10",
+      "depth": "VS Code + 协议探针",
+      "evidence": "commit 7918816"
+    }
+  ],
+  "knownBreakingChanges": [
+    {
+      "version": "0.1.2-rc.1",
+      "surfaces": ["auth", "rpc", "dist-layout"],
+      "summary": "启动令牌 + authority 绑定签名 Cookie；RPC 改 Typert namespace/method + batches dist 布局",
+      "fixedIn": "0.3.4"
+    },
+    {
+      "version": "0.1.1-rc.2",
+      "surfaces": ["boot-manifest"],
+      "summary": "boot 注入由 window.__DSH_BOOT__ 改为 globalThis[\"__DSH_BOOT__\"]",
+      "fixedIn": "0.3.2"
+    },
+    {
+      "version": "0.1.0-rc.8",
+      "surfaces": ["preload", "cli-flag"],
+      "summary": "阻塞式 preload 标签；dsh web 默认打开外部浏览器（--no-open 首次出现）",
+      "fixedIn": "0.3.1"
+    }
+  ],
+  "fragilePoints": [
+    {
+      "id": "boot-manifest",
+      "what": "boot 注入形态：window.__DSH_BOOT__ = {...} 还是 globalThis[\"__DSH_BOOT__\"] = {...}；是否含 batches[]",
+      "verifiedOn": "0.1.2-rc.1",
+      "code": "src/documentAssembly.ts 的 BOOT_RE",
+      "breaksHow": "正则失配 → rewriteBootPluginUrls 原样返回 → plugin URL 保持相对 → 面板报 Failed to load plugins"
+    },
+    {
+      "id": "plugin-preload",
+      "what": "阻塞式 preload <script src=\"/plugins/...\"> 的存在与 mux 形态（/plugins/??pkg/client.js,…&rev=）",
+      "verifiedOn": "0.1.2-rc.1",
+      "code": "src/documentAssembly.ts 的 PLUGIN_PRELOAD_RE",
+      "breaksHow": "未绝对化 → webview 按 vscode-webview:// 解析 → module 队列收不到注册"
+    },
+    {
+      "id": "dist-asset-refs",
+      "what": "dist index 的资产引用是绝对 /assets/… 还是相对 ./assets/… + <base href=\"/\">",
+      "verifiedOn": "0.1.2-rc.1",
+      "code": "src/documentAssembly.ts 的 ASSET_REF_RE / CSS_URL_RE",
+      "breaksHow": "改写链失效 → 资产 404 或跨源 CORS 失败 → 白屏"
+    },
+    {
+      "id": "api-auth-and-rpc",
+      "what": "启动行是否带 /?token=；/api 是否要求 authority 绑定 Cookie；RPC 是否仍是 Typert namespace/method + {args}；workspace 枚举是否仍走 workspace/follow 首帧",
+      "verifiedOn": "0.1.2-rc.1",
+      "code": "src/serverManager.ts 的 URL_LINE_RE / exchangeCookie / api() / workspaceSnapshot()",
+      "breaksHow": "401 或 404 → 面板白屏、宿主 RPC 全挂"
+    },
+    {
+      "id": "cli-launch-line-and-flags",
+      "what": "启动行格式 `dsh web: http://127.0.0.1:<port>[/?token=…]`；`dsh web --help` 是否含 --no-open",
+      "verifiedOn": "0.1.0-rc.6 / 0.1.2-rc.1",
+      "code": "src/serverManager.ts 的 URL_LINE_RE / probeNoOpenSupport",
+      "breaksHow": "解析不到 → 启动超时报错；--no-open 判断错 → 弹浏览器或旧版启动失败"
+    },
+    {
+      "id": "frontend-layout-constants",
+      "what": "官方前端布局：SIDEBAR_AUTO_COLLAPSE=1024；布局 store 初始 sidebar=280、0 表示收起(渲染 56px)、setSidebar 钳 264..420；折叠控件 aria-label 文案 toggle.collapse/toggle.open（中\"收起侧边栏\"/英\"Collapse sidebar\"）；布局 store 不读写 localStorage（reload 即重置）",
+      "verifiedOn": "0.1.2-rc.1（@deepseek-ai/dsh-client-ui-layout 与 dsh-client-ui-sidebar 的 lib/client.js）",
+      "code": "尚无代码依赖；是 Q4 方案（面板 <1024px 自动收起 / 注入脚本点折叠按钮）的依据",
+      "breaksHow": "若这些常量或文案变化，依赖它们的界面调整方案会静默失效",
+      "note": "0.1.5-rc.1 / rc.2 未逐行复核，落地前按 docs/01-Projects/R20260914-02-DSH内嵌原理与教程/04-方案_DSH界面调整与侧边栏收纳.md §7 的方法复核"
+    },
+    {
+      "id": "embed-loopback-settings-mode",
+      "what": "嵌入页面的 Host 身份判定：dsh-client-connection 读 globalThis.__DSH_TRANSPORT__（ownsHost）与 pageLocation.hostname 得出 isLoopback；dsh-client-ui-settings 用它选 settings 持久化模式（host / memory）；memory 模式下 WelcomeNoticeStore 只在进程内确认（localAcknowledged）",
+      "verifiedOn": "0.1.5-rc.2",
+      "code": "media/bridge-client.js 的 `DSH transport-hook declaration` 段（window.__DSH_TRANSPORT__ = { fetch, ownsHost: true }）",
+      "breaksHow": "若上游改掉 __DSH_TRANSPORT__ 的消费点或 isLoopback 语义：页面回落到 memory 模式 → 「内测声明」每次重载复发 + 面板设置静默不落盘（无报错，只是不生效）",
+      "note": "见 docs/01-Projects/R20260817-01-桥架构与IDE内嵌/14-修复_面板内图片不显示与内测声明反复出现.md；回归断言在 test/bridgeClient.test.js"
+    },
+    {
+      "id": "frontend-image-blob-urls",
+      "what": "官方前端的图片渲染方案：输入框待发图预览、消息内图片、工作区图片预览都用 URL.createObjectURL(blob: URL)；HTML 预览用 blob: iframe；非图片附件上传用 Worker(blob:)",
+      "verifiedOn": "0.1.5-rc.2（dsh-client-ui-conversation / dsh-client-ui-attachment / dsh-client-ui-sidebar-documentpreview / dsh-client-file-upload 的 lib/client.js）",
+      "code": "src/documentAssembly.ts 的 buildCsp（img-src 的 blob:）",
+      "breaksHow": "若官方改用别的 URL 方案（或改回 data:），我们的 CSP 源列表可能又缺一项 → 图片/预览再次被拒载；反之若官方不再用 blob:，这条放行就可收回"
+    }
+  ],
+  "audit": {
+    "lastCheckedOn": "2026-09-15",
+    "lastCheckedTags": {
+      "latest": "0.1.5-rc.1",
+      "next": "0.1.5-rc.2",
+      "alpha": "0.1.5-alpha.2"
+    },
+    "lastCheckedResult": "已覆盖：latest 与 next 均在 verified 列表中；alpha 为上游实验通道，不纳入基线。",
+    "localInstall": "2026-09-15：本机全局 CLI 由 0.1.5-rc.1 升到 0.1.5-rc.2（next 通道最新，按发布时间也是最新）。升级动作在活跃会话上执行，导致该会话子进程工具链失效（见 docs/01-Projects/R20260820-01-上游DSH版本适配/11-事件_热升级内核导致会话工具链失效.md）。**rc.2 的四破坏面 A–D 复核、scripts/smoke.js 与真机面板验证仍待做**——复核通过前不要提高 verified[] 里该版本的核实深度。"
+  }
+}
