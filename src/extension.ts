@@ -14,6 +14,8 @@ import { columnForRightSide, resolveOpenTarget, type OpenTarget } from "./openTa
 import { DshLauncherView } from "./launcherView.js";
 import { registerThemeSync } from "./themeSync.js";
 import { createDshStatusBar } from "./statusBar.js";
+import { deliverUrisToComposer } from "./dshUi.js";
+import { t } from "./i18n.js";
 import { normalizePath, shouldAutoRestart, buildSessionPresetPayload } from "./workspaceTracker.js";
 import { checkForUpdates, showUpgradeOptions, type UpgradeChannel } from "./versionCheckService.js";
 
@@ -173,6 +175,16 @@ export function activate(context: vscode.ExtensionContext): void {
     openDefault: () => openUi(undefined, undefined),
     openEditorTab: () => openEditorTab(),
     openChatView: () => void openSidePanel(),
+    // Explorer context menu -> composer (R20260917-01 fallback): the visible
+    // side-bar view wins, otherwise the most recent editor-tab panel.
+    addToContext: (uris) => {
+      const target = chatView.isVisible ? chatView : panels.visiblePanel();
+      if (!target) {
+        void vscode.window.showWarningMessage(t("context.noSurface"));
+        return;
+      }
+      void deliverUrisToComposer(target, uris, workspaceRoot());
+    },
   });
   createDshStatusBar(context, manager);
 

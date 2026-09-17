@@ -196,6 +196,237 @@
     console.error("[dsh-bridge] clipboard shim failed", _e);
   }
 
+  // ------------------------- VS Code explorer drag -> @file reference
+  // (R20260917-01) Dragging a file from the VS Code explorer onto this page
+  // should add an `@path` reference to the composer, exactly like picking the
+  // file from the `@` completion.
+  //
+  // Two VS Code facts shape this code:
+  //  1. While a drag that started inside the window is in flight, VS Code sets
+  //     `pointer-events: none` on every webview iframe, so the page receives no
+  //     drag events at all unless the user holds Shift (the documented escape
+  //     hatch, microsoft/vscode#182449 / PR #209211). Nothing here can change
+  //     that; the README tells the user about Shift.
+  //  2. Such a drag carries NO File objects — only string items in VS Code's own
+  //     mime types — so the paths must be read from those mime types. We forward
+  //     the raw payload to the extension host, which owns the (unit-tested) path
+  //     grammar and answers with the finished reference text.
+  //
+  // Writing it back into the composer goes through the DSH frontend's own paste
+  // command (`PASTE_COMMAND` -> `handlers.pasteText`), because the composer is a
+  // Lexical editor: touching its DOM directly would be reverted by the next
+  // editor commit.
+  var RESOURCE_DRAG_TYPES = [
+    "application/vnd.code.uri-list",
+    "text/uri-list",
+    "resourceurls",
+    "codefiles",
+    "codeeditors",
+  ];
+  var COMPOSER_SELECTOR = "[data-composer-input]";
+  var dropArmed = false;
+  var dropHintEl = null;
+
+  function dragTypeList(dataTransfer) {
+    try {
+      return Array.prototype.slice
+        .call((dataTransfer && dataTransfer.types) || [])
+        .map(function (type) {
+          return String(type).toLowerCase();
+        });
+    } catch (_e) {
+      return [];
+    }
+  }
+
+  // Which drags we take over. Real files (a drag from the OS) stay with DSH's
+  // own attachment drop, and a text selection from an editor is not a file
+  // reference — both must keep their existing behaviour.
+  function isResourceDrag(dataTransfer) {
+    var types = dragTypeList(dataTransfer);
+    if (types.length === 0) return false;
+    if (types.indexOf("files") !== -1) return false;
+    if (types.indexOf("vscode-editor-data") !== -1) return false;
+    for (var i = 0; i < RESOURCE_DRAG_TYPES.length; i++) {
+      if (types.indexOf(RESOURCE_DRAG_TYPES[i]) !== -1) return true;
+    }
+    return false;
+  }
+
+  function readDropPayload(dataTransfer) {
+    var out = {};
+    var types = [];
+    try {
+      types = Array.prototype.slice.call((dataTransfer && dataTransfer.types) || []);
+    } catch (_e) {
+      return out;
+    }
+    for (var i = 0; i < types.length; i++) {
+      try {
+        var value = dataTransfer.getData(types[i]);
+        if (value) out[String(types[i])] = value;
+      } catch (_e) {
+        /* unreadable type: skip it */
+      }
+    }
+    return out;
+  }
+
+  // The hint sits above the DSH page, whose own design tokens we do not have.
+  // A neutral dark pill is legible on both the light and the dark DSH theme,
+  // which is why this one place hardcodes colours (every other surface in the
+  // extension uses --vscode-* variables).
+  function showDropHint() {
+    var text = bridge.dropHint || "";
+    if (!text || typeof document === "undefined") return;
+    if (!dropHintEl) {
+      dropHintEl = document.createElement("div");
+      dropHintEl.id = "dsh-drop-hint";
+      dropHintEl.style.cssText =
+        "position:fixed;left:50%;bottom:24px;transform:translateX(-50%);" +
+        "z-index:2147483647;pointer-events:none;background:rgba(24,24,24,.9);color:#fff;" +
+        "font:13px/1.5 system-ui,-apple-system,sans-serif;padding:8px 14px;border-radius:8px;" +
+        "box-shadow:0 4px 16px rgba(0,0,0,.35);max-width:80vw;text-align:center;";
+      document.body.appendChild(dropHintEl);
+    }
+    dropHintEl.textContent = text;
+    dropHintEl.style.display = "block";
+  }
+
+  function hideDropHint() {
+    if (dropHintEl) dropHintEl.style.display = "none";
+  }
+
+  function disarmDrop() {
+    dropArmed = false;
+    hideDropHint();
+  }
+
+  // The composer is `<div data-composer-input contenteditable role=textbox>`
+  // (Lexical). The attribute also exists in the hero/empty state with
+  // contenteditable="false", so writability is checked before use.
+  function findComposer() {
+    if (typeof document === "undefined") return null;
+    var el = document.querySelector(COMPOSER_SELECTOR);
+    if (el) return el;
+    var roots = document.querySelectorAll('[data-lexical-editor="true"]');
+    var best = null;
+    for (var i = 0; i < roots.length; i++) {
+      if (roots[i].getAttribute("contenteditable") !== "false") best = roots[i];
+    }
+    return best;
+  }
+
+  function composerWritable(el) {
+    if (!el) return false;
+    if (el.getAttribute("contenteditable") === "false") return false;
+    if (el.getAttribute("aria-disabled") === "true") return false;
+    if (el.getAttribute("data-phase") === "inert") return false;
+    return true;
+  }
+
+  // A synthetic paste event is the only way in: DSH's composer is a Lexical
+  // editor whose draft lives in editor state, so DOM writes get reverted. The
+  // frontend handles the paste by reading `clipboardData` and inserting the
+  // text through its own (synchronous, `discrete`) edit path.
+  function dispatchPaste(el, text) {
+    try {
+      var dataTransfer = new DataTransfer();
+      dataTransfer.setData("text/plain", text);
+      var event = new ClipboardEvent("paste", {
+        clipboardData: dataTransfer,
+        bubbles: true,
+        cancelable: true,
+      });
+      el.dispatchEvent(event);
+      return true;
+    } catch (_e) {
+      return false;
+    }
+  }
+
+  /**
+   * Write `text` into the composer. `text` is the finished reference list; the
+   * separating spaces are added here so the `@` token is never glued to
+   * existing text (DSH only recognises `@` at a line start or after a space).
+   */
+  function insertReferenceText(text, done) {
+    var el = findComposer();
+    var before = el ? String(el.textContent || "") : "";
+    var padded = (before.length > 0 ? " " : "") + text + " ";
+    if (!composerWritable(el)) {
+      done({ ok: false, reason: "no-composer", text: padded });
+      return;
+    }
+    try {
+      el.focus({ preventScroll: true });
+    } catch (_e) {
+      try {
+        el.focus();
+      } catch (_e2) {
+        /* focus is best-effort */
+      }
+    }
+    if (dispatchPaste(el, padded) && String(el.textContent || "") !== before) {
+      done({ ok: true, reason: "paste", text: padded });
+      return;
+    }
+    // Fallback command: Lexical also handles the browser's own insertText path.
+    // Re-check shortly after, because a DOM-only insertion would be reverted by
+    // the next editor commit — reporting success for text that then disappears
+    // would be a lie.
+    try {
+      document.execCommand("insertText", false, padded);
+    } catch (_e) {
+      /* command unavailable */
+    }
+    if (String(el.textContent || "") === before) {
+      done({ ok: false, reason: "rejected", text: padded });
+      return;
+    }
+    setTimeout(function () {
+      done({ ok: String(el.textContent || "") !== before, reason: "execCommand", text: padded });
+    }, 60);
+  }
+
+  if (typeof document !== "undefined" && document.addEventListener) {
+    document.addEventListener(
+      "dragover",
+      function (event) {
+        if (!isResourceDrag(event.dataTransfer)) return;
+        event.preventDefault();
+        if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+        dropArmed = true;
+        showDropHint();
+      },
+      true
+    );
+    document.addEventListener(
+      "dragleave",
+      function (event) {
+        // relatedTarget is null only when the pointer leaves the document.
+        if (event.relatedTarget === null) disarmDrop();
+      },
+      true
+    );
+    document.addEventListener(
+      "drop",
+      function (event) {
+        if (!isResourceDrag(event.dataTransfer)) {
+          disarmDrop();
+          return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        var payload = readDropPayload(event.dataTransfer);
+        disarmDrop();
+        post({ type: "dsh-context-drop", payload: payload });
+      },
+      true
+    );
+    window.addEventListener("blur", disarmDrop);
+  }
+
   // ---------------------------------------------------------- host -> page
   window.addEventListener("message", function (event) {
     var msg = event.data;
@@ -259,6 +490,20 @@
           } catch (_e) {
             /* listener isolation */
           }
+        });
+        break;
+      }
+      case "dsh-context-insert": {
+        // Translating the drop belongs to the host (unit-tested grammar); all
+        // this side does is put the finished text into the composer and report
+        // honestly whether it landed.
+        insertReferenceText(String(msg.text == null ? "" : msg.text), function (result) {
+          post({
+            type: "dsh-context-insert-result",
+            ok: result.ok,
+            reason: result.reason,
+            text: result.text,
+          });
         });
         break;
       }

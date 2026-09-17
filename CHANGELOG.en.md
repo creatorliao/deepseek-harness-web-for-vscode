@@ -7,6 +7,19 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-09-17
+
+### Added
+
+- **Drag a file from the explorer onto the DSH composer and it becomes an `@` reference** (the Cursor "drag a file into chat" flow): dropping one file, a multi-selection, or a folder writes `@workspace-relative/path` (paths with spaces become `@"…"`, folders get a trailing `/`) — **functionally identical** to picking the file from the `@` completion.
+  - ⚠️ **Hold `Shift` while dragging.** That is a VS Code constraint, not a choice made here: for the duration of any in-window drag VS Code disables pointer events on every webview iframe ("Webview break drag and dropping around the main window" in its own source), and Shift is the documented escape hatch — the official fix for microsoft/vscode#182449 (PR #209211, 1.93+). Without Shift the file is opened in the editor area, which looks like the feature doing nothing.
+  - **Equivalent context-menu entry (no Shift needed)**: select files in the explorer → right-click → **添加到 DSH 输入框（@ 引用）**. Multi-select and folders included. It exists because the drag path can additionally be blocked by an open VS Code bug (microsoft/vscode#237958).
+  - The text written is plain `@path`: DSH's `@` completion chip serializes to exactly that string, so the message the model receives is byte-identical — no chip in the UI, identical meaning. Deliberate trade-off: upstream exposes no way to insert a chip programmatically, and re-creating one buys no functionality.
+  - Only "resource" drags are taken over: dragging real files from the **OS** (still handled by DSH's own attachment upload) and dragging a **text selection** out of an editor behave exactly as before.
+  - A failed write (busy / read-only composer) is never reported as success: the references go to the clipboard with a Chinese warning to press `Ctrl+V`.
+  - References are relative to the workspace root (the `dsh` child's cwd); files outside it keep their absolute path.
+- New command **`添加到 DSH 输入框（@ 引用）`** (explorer context menu).
+
 ## [0.4.0] - 2026-09-15
 
 ### Fixed

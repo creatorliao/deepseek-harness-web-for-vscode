@@ -31,6 +31,9 @@ export interface AssembleOptions {
   sessionPreset?: string;
   /** Extra markup injected before </body> (e.g. the server-status overlay). */
   chromeHtml?: string;
+  /** Hint shown while a VS Code resource drag hovers the page (R20260917-01).
+   *  Passed in rather than hardcoded so the string stays in the i18n table. */
+  dropHint?: string;
   /** dsh 0.1.2+ browser-session cookie (name=value); / requires it or 401. */
   cookie?: string;
   fetchImpl?: typeof fetch;
@@ -228,7 +231,11 @@ export async function assembleDocument(opts: AssembleOptions): Promise<Assembled
   html = rewriteBootPluginPreloads(html, serverBase);
 
   const bootScript =
-    `<script>window.__DSH_BRIDGE__ = ${JSON.stringify({ serverBase, ...(themeDark !== undefined ? { dark: themeDark } : {}) })}<\/script>` +
+    `<script>window.__DSH_BRIDGE__ = ${JSON.stringify({
+      serverBase,
+      ...(themeDark !== undefined ? { dark: themeDark } : {}),
+      ...(opts.dropHint ? { dropHint: opts.dropHint } : {}),
+    })}<\/script>` +
     (opts.sessionPreset
       ? `<script>try { localStorage.setItem("dsh.sessions.current", ${JSON.stringify(opts.sessionPreset)}); } catch (e) { console.error("[dsh] session preset failed", e); }<\/script>`
       : "") +

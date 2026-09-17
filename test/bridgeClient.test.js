@@ -18,11 +18,57 @@ const SCRIPT = require("node:fs").readFileSync(
   "utf8"
 );
 
+/** A fake Lexical-ish composer element (the real one is `[data-composer-input]`). */
+function fakeComposer(attrs = {}) {
+  const el = {
+    textContent: "",
+    focused: false,
+    _attrs: attrs,
+    getAttribute(name) {
+      return name in el._attrs ? el._attrs[name] : null;
+    },
+    focus() {
+      el.focused = true;
+    },
+    // Simulate the frontend's paste handling: it reads `clipboardData` and
+    // inserts the text synchronously (Lexical `applyEdit(..., discrete)`).
+    dispatchEvent(event) {
+      if (event && event.type === "paste" && event.clipboardData) {
+        el.textContent += event.clipboardData.getData("text/plain");
+      }
+      return true;
+    },
+  };
+  return el;
+}
+
+/** A drag event stub carrying the mime types VS Code writes. */
+function dragEvent(types, data = {}) {
+  return {
+    dataTransfer: {
+      types,
+      getData: (type) => (type in data ? data[type] : ""),
+      dropEffect: "",
+    },
+    relatedTarget: null,
+    defaultPrevented: false,
+    propagationStopped: false,
+    preventDefault() {
+      this.defaultPrevented = true;
+    },
+    stopPropagation() {
+      this.propagationStopped = true;
+    },
+  };
+}
+
 /** Install browser globals, run the bridge script, return a probe handle. */
-function loadBridge(bridgeInit) {
+function loadBridge(bridgeInit, options = {}) {
   const posted = [];
   const nativeFetchCalls = [];
   const listeners = {};
+  const docListeners = {};
+  const composer = options.composer === undefined ? fakeComposer() : options.composer;
 
   const window = {
     fetch: (input, init) => {
@@ -46,6 +92,35 @@ function loadBridge(bridgeInit) {
       }
     },
   };
+  const document = {
+    addEventListener: (type, fn) => {
+      (docListeners[type] = docListeners[type] || []).push(fn);
+    },
+    querySelector: (selector) =>
+      selector === "[data-composer-input]" ? composer ?? null : null,
+    querySelectorAll: () => (composer ? [composer] : []),
+    createElement: () => ({ style: {}, textContent: "" }),
+    body: { appendChild: () => {} },
+    execCommand: () => false,
+  };
+  class FakeDataTransfer {
+    constructor() {
+      this._data = {};
+    }
+    setData(type, value) {
+      this._data[type] = String(value);
+    }
+    getData(type) {
+      return this._data[type] ?? "";
+    }
+  }
+  class FakeClipboardEvent {
+    constructor(type, init = {}) {
+      this.type = type;
+      this.clipboardData = init.clipboardData;
+      this.bubbles = init.bubbles;
+    }
+  }
   const acquireVsCodeApi = () => ({ postMessage: (msg) => posted.push(msg) });
   const location = { href: WEBVIEW_ORIGIN + "/", origin: WEBVIEW_ORIGIN };
   // Node ≥21 exposes a read-only global navigator; the bridge only adds a
@@ -53,6 +128,9 @@ function loadBridge(bridgeInit) {
   const navigator = globalThis.navigator;
 
   globalThis.window = window;
+  globalThis.document = document;
+  globalThis.DataTransfer = FakeDataTransfer;
+  globalThis.ClipboardEvent = FakeClipboardEvent;
   globalThis.location = location;
   globalThis.acquireVsCodeApi = acquireVsCodeApi;
   if (bridgeInit) window.__DSH_BRIDGE__ = bridgeInit;
@@ -71,7 +149,7 @@ function loadBridge(bridgeInit) {
   );
   run(window, location, navigator, acquireVsCodeApi, URL, Headers, Response, DOMException);
 
-  return { posted, nativeFetchCalls, window, listeners };
+  return { posted, nativeFetchCalls, window, listeners, docListeners, composer };
 }
 
 test("fetch with a URL object relays the correct path (regression: /undefined)", async () => {
@@ -169,4 +247,80 @@ test("matchMedia shim follows __DSH_BRIDGE__.dark and theme-preference messages"
   h.listeners.message.forEach((fn) => fn({ data: { type: "theme-preference", dark: false } }));
   assert.equal(darkMql.matches, false);
   assert.deepEqual(seen, [false]);
+});
+
+// ------------------------- VS Code explorer drag -> @reference (R20260917-01)
+
+test("a VS Code resource drag is taken over and its raw payload forwarded", () => {
+  const h = loadBridge();
+  const data = {
+    "application/vnd.code.uri-list": "file:///d%3A/code/proj/src/a.ts",
+    "text/plain": "src/a.ts",
+  };
+  const over = dragEvent(Object.keys(data), data);
+  h.docListeners.dragover.forEach((fn) => fn(over));
+  assert.equal(over.defaultPrevented, true, "dragover must be allowed or no drop fires");
+  assert.equal(over.dataTransfer.dropEffect, "copy");
+
+  const drop = dragEvent(Object.keys(data), data);
+  h.docListeners.drop.forEach((fn) => fn(drop));
+  assert.equal(drop.defaultPrevented, true);
+  assert.equal(h.posted.length, 1);
+  assert.equal(h.posted[0].type, "dsh-context-drop");
+  // Raw payload only: the path grammar belongs to the (unit-tested) host side.
+  assert.deepEqual(h.posted[0].payload, data);
+});
+
+test("an OS file drag is left to DSH's own attachment drop", () => {
+  // These carry real File objects; DSH uploads them as attachments and must
+  // keep working, so the extension must not intercept them.
+  const h = loadBridge();
+  const over = dragEvent(["Files", "text/plain"], {});
+  h.docListeners.dragover.forEach((fn) => fn(over));
+  assert.equal(over.defaultPrevented, false);
+
+  const drop = dragEvent(["Files", "text/plain"], {});
+  h.docListeners.drop.forEach((fn) => fn(drop));
+  assert.equal(drop.defaultPrevented, false);
+  assert.equal(h.posted.length, 0);
+});
+
+test("dragging a text selection out of an editor is not treated as a file reference", () => {
+  const h = loadBridge();
+  const data = { "text/plain": "const x = 1;", "vscode-editor-data": '{"version":1}' };
+  const over = dragEvent(Object.keys(data), data);
+  h.docListeners.dragover.forEach((fn) => fn(over));
+  assert.equal(over.defaultPrevented, false);
+  assert.equal(h.posted.length, 0);
+});
+
+test("dsh-context-insert writes the reference through a synthetic paste", () => {
+  const h = loadBridge();
+  h.composer.textContent = "看看这个";
+  h.listeners.message.forEach((fn) => fn({ data: { type: "dsh-context-insert", text: "@src/a.ts" } }));
+  // A space is added before the reference: DSH only recognises `@` at a line
+  // start or after whitespace, so gluing it to existing text would break it.
+  assert.equal(h.composer.textContent, "看看这个 @src/a.ts ");
+  assert.equal(h.composer.focused, true);
+  const result = h.posted.find((m) => m.type === "dsh-context-insert-result");
+  assert.equal(result.ok, true);
+  assert.equal(result.reason, "paste");
+  assert.equal(result.text, " @src/a.ts ");
+});
+
+test("dsh-context-insert into an empty composer adds no leading space", () => {
+  const h = loadBridge();
+  h.listeners.message.forEach((fn) => fn({ data: { type: "dsh-context-insert", text: "@a.ts @b.ts" } }));
+  assert.equal(h.composer.textContent, "@a.ts @b.ts ");
+});
+
+test("a read-only composer reports failure instead of pretending", () => {
+  const h = loadBridge(undefined, { composer: fakeComposer({ contenteditable: "false" }) });
+  h.listeners.message.forEach((fn) => fn({ data: { type: "dsh-context-insert", text: "@src/a.ts" } }));
+  assert.equal(h.composer.textContent, "");
+  const result = h.posted.find((m) => m.type === "dsh-context-insert-result");
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, "no-composer");
+  // The text still comes back so the host can put it on the clipboard.
+  assert.equal(result.text, "@src/a.ts ");
 });

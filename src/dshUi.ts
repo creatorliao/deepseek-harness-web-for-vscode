@@ -5,8 +5,87 @@
 import * as path from "node:path";
 import * as vscode from "vscode";
 import { t, langCode } from "./i18n.js";
+import {
+  candidatesFromPayload,
+  entriesFromCandidates,
+  referencesFromEntries,
+  type DropCandidate,
+} from "./referenceDrop.js";
 
 const DIST_DIR_NAME = "dsh-dist";
+
+/** Anything a message can be posted to: a `WebviewPanel` or a `WebviewView`. */
+export interface MessageSink {
+  postMessage(message: unknown): Thenable<boolean> | void;
+}
+
+/** How the drop path decides file-vs-folder (undefined = the path is not there). */
+async function statKind(absPath: string): Promise<"file" | "folder" | undefined> {
+  try {
+    const stat = await vscode.workspace.fs.stat(vscode.Uri.file(absPath));
+    return stat.type === vscode.FileType.Directory ? "folder" : "file";
+  } catch {
+    return undefined;
+  }
+}
+
+function asPayload(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === "object" ? (value as Record<string, unknown>) : {};
+}
+
+async function deliverCandidates(
+  target: MessageSink,
+  candidates: readonly DropCandidate[],
+  root: string
+): Promise<void> {
+  const entries = await entriesFromCandidates(candidates, root, statKind);
+  const text = referencesFromEntries(entries);
+  if (text.length === 0) {
+    // Never a silent no-op: the user dragged something and it did not resolve.
+    void vscode.window.showWarningMessage(t("context.dropUnresolved"));
+    return;
+  }
+  target.postMessage({ type: "dsh-context-insert", text });
+}
+
+/**
+ * Explorer drag -> composer (R20260917-01). The payload is what the webview
+ * read off the drag's DataTransfer: raw mime -> string map, no interpretation
+ * done on that side (the grammar is unit-tested here).
+ */
+export async function deliverDropToComposer(
+  target: MessageSink,
+  payload: unknown,
+  root: string
+): Promise<void> {
+  await deliverCandidates(target, candidatesFromPayload(asPayload(payload)), root);
+}
+
+/**
+ * Explorer context-menu ("添加到 DSH 输入框") -> composer: the same reference
+ * pipeline, for when VS Code's webview drag blocking gets in the way.
+ */
+export async function deliverUrisToComposer(
+  target: MessageSink,
+  uris: readonly vscode.Uri[],
+  root: string
+): Promise<void> {
+  const candidates: DropCandidate[] = uris.map((uri) => ({ path: uri.fsPath, fileOnly: false }));
+  await deliverCandidates(target, candidates, root);
+}
+
+/**
+ * The webview reports whether the reference text actually landed in the
+ * composer (it may be busy or read-only). On failure: put the text on the
+ * clipboard and say so — the sibling Obsidian project's honest-degradation
+ * rule, which is what keeps a broken write from looking like a lost drag.
+ */
+export function handleInsertResult(msg: { ok?: unknown; text?: unknown }): void {
+  if (msg.ok === true) return;
+  const text = typeof msg.text === "string" ? msg.text : "";
+  if (text.length > 0) void vscode.env.clipboard.writeText(text);
+  void vscode.window.showWarningMessage(t("context.insertFailed"));
+}
 
 /** Where the downloaded DSH dist tree is cached (shared by every surface). */
 export function distRootPath(context: vscode.ExtensionContext): string {

@@ -100,4 +100,22 @@ export class SessionPanelManager {
   updateTitle(sessionId: string, title: string): void {
     this.panels.get(sessionId)?.updateTitle(title);
   }
+
+  /**
+   * The panel a message from OUTSIDE the webview should go to (the explorer
+   * context-menu reference insert): the visible panel when there is one,
+   * otherwise the most recently opened — the hidden panel keeps its state, so
+   * the text is waiting when the user switches back.
+   *
+   * Note: an unbound panel created by `open(undefined, …)` is not tracked here
+   * (pre-existing behaviour), so it can never be picked.
+   */
+  visiblePanel(): DshPanel | undefined {
+    for (let i = this.order.length - 1; i >= 0; i--) {
+      const panel = this.panels.get(this.order[i]);
+      if (panel?.isVisible) return panel;
+    }
+    const last = this.order[this.order.length - 1];
+    return last === undefined ? undefined : this.panels.get(last);
+  }
 }

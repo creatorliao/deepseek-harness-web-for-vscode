@@ -15,9 +15,17 @@ import * as vscode from "vscode";
 import { DshServerManager, type ServerInfo } from "./serverManager.js";
 import { assembleDocument } from "./documentAssembly.js";
 import { BridgeHost } from "./bridgeHost.js";
-import { dshStartOptions } from "./commands.js";
+import { dshStartOptions, workspaceRoot } from "./commands.js";
 import { FOCUS_CHAT_VIEW_COMMAND, FOCUS_CHAT_VIEW_ITEM_COMMAND } from "./openTarget.js";
-import { distRootPath, isDarkTheme, placeholderHtml, statusChromeHtml } from "./dshUi.js";
+import {
+  distRootPath,
+  isDarkTheme,
+  placeholderHtml,
+  statusChromeHtml,
+  deliverDropToComposer,
+  handleInsertResult,
+} from "./dshUi.js";
+import { t } from "./i18n.js";
 
 export class DshChatView implements vscode.WebviewViewProvider {
   /** View id contributed under the `deepseek-harness-chat` container. */
@@ -63,13 +71,17 @@ export class DshChatView implements vscode.WebviewViewProvider {
     );
 
     webviewView.webview.onDidReceiveMessage((msg) => {
-      const m = msg as { type?: string };
+      const m = msg as { type?: string; payload?: unknown; ok?: unknown; text?: unknown };
       if (m.type === "start") {
         void this.manager.start(dshStartOptions()).catch(() => {
           /* state machine drives the overlay */
         });
       } else if (m.type === "stop") {
         this.manager.stop();
+      } else if (m.type === "dsh-context-drop") {
+        void deliverDropToComposer(webviewView.webview, m.payload, workspaceRoot());
+      } else if (m.type === "dsh-context-insert-result") {
+        handleInsertResult(m);
       }
     });
     webviewView.onDidDispose(() => {
@@ -86,6 +98,19 @@ export class DshChatView implements vscode.WebviewViewProvider {
   /** Session this view is currently bound to (undefined = unbound). */
   get boundSessionId(): string | undefined {
     return this.sessionId;
+  }
+
+  /** Whether the view is showing in the UI (target picking for the context menu). */
+  get isVisible(): boolean {
+    return this.view?.visible ?? false;
+  }
+
+  /**
+   * Post one message to this view's webview. Used by the explorer context-menu
+   * entry, which has no webview message of its own to reply to.
+   */
+  postMessage(message: unknown): void {
+    void this.view?.webview.postMessage(message);
   }
 
   /**
@@ -149,6 +174,7 @@ export class DshChatView implements vscode.WebviewViewProvider {
         themeDark: isDarkTheme(),
         sessionPreset: this.pendingPreset,
         chromeHtml: statusChromeHtml(),
+        dropHint: t("context.dropHint"),
         log: (m) => console.log("[dsh] " + m),
       });
       this.view.webview.html = html;

@@ -147,6 +147,19 @@ export const STRINGS = {
   "sessions.error": {
     zh: "会话列表加载失败",
   },
+  // context: explorer drag / context menu -> composer reference (R20260917-01)
+  "context.dropHint": {
+    zh: "松开鼠标，即把拖入的文件作为 @ 引用加入输入框",
+  },
+  "context.dropUnresolved": {
+    zh: "未能从这次拖拽里识别出可用的文件路径。若从资源管理器拖入，请按住 Shift 再拖；也可以右键文件选择「添加到 DSH 输入框」。",
+  },
+  "context.insertFailed": {
+    zh: "未能写入 DSH 输入框（输入框可能正忙或不可编辑）。引用已复制到剪贴板，请按 Ctrl+V 粘贴。",
+  },
+  "context.noSurface": {
+    zh: "DeepSeek Harness 界面没有打开。请先启动并打开 DSH 界面，再添加引用。",
+  },
 } as const satisfies Record<string, I18nRow>;
 
 export type I18nKey = keyof typeof STRINGS;

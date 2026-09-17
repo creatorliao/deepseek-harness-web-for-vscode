@@ -1,6 +1,6 @@
 {
   "$schema-comment": "本项目适配的上游 @deepseek-ai/dsh 版本基线。这是版本相关事实的唯一机器可读源；scripts/check-dsh-latest.js 读取它。人工维护的说明见 docs/02-Areas/20260914-06-上游兼容规范_跟随最新官方DSH.md。",
-  "extensionVersion": "0.4.0",
+  "extensionVersion": "0.5.0",
   "minDshVersion": "0.1.2-rc.1",
   "minDshVersionNote": "硬门：src/serverManager.ts 的 MIN_DSH_VERSION；低于此版本直接拒绝启动。改动必须同步 README.md / README.en.md / CHANGELOG.md。",
   "verified": [
@@ -94,6 +94,14 @@
       "code": "media/bridge-client.js 的 `DSH transport-hook declaration` 段（window.__DSH_TRANSPORT__ = { fetch, ownsHost: true }）",
       "breaksHow": "若上游改掉 __DSH_TRANSPORT__ 的消费点或 isLoopback 语义：页面回落到 memory 模式 → 「内测声明」每次重载复发 + 面板设置静默不落盘（无报错，只是不生效）",
       "note": "见 docs/01-Projects/R20260817-01-桥架构与IDE内嵌/14-修复_面板内图片不显示与内测声明反复出现.md；回归断言在 test/bridgeClient.test.js"
+    },
+    {
+      "id": "composer-anchor-and-paste-command",
+      "what": "composer 的 DOM 锚点 `[data-composer-input]`（Lexical 根，带 role=textbox / contenteditable；占位符是兄弟节点 div[data-composer-placeholder]）；它的粘贴命令绑在编辑器根元素上（DOM `paste` → PASTE_COMMAND → handlers.pasteText → keyboard.paste，`discrete` 同步提交）；`@` 引用语法 = 工作区相对路径 + 正斜杠、目录尾随 `/`、含空格写 `@\"…\"`、含 `\"` 则跳过",
+      "verifiedOn": "0.1.5-rc.2",
+      "code": "media/bridge-client.js 的 `VS Code explorer drag -> @file reference` 段（insertReferenceText / dispatchPaste）+ src/referenceDrop.ts 的 toReference",
+      "breaksHow": "① 锚点或粘贴绑定一变 → 拖拽写入静默失效（先退 execCommand，再失败则中文提示 + 降级剪贴板，不谎报成功）；② `@` 语法一变 → 引用文本模型读不到该文件（面板里看起来一切正常，属于最坏的一类静默失效）",
+      "note": "见 docs/01-Projects/R20260917-01-目录树拖拽到Composer/05-事实_DSH-Composer与提及机制.md；04-事实 记录 VS Code 侧的 Shift 前提"
     },
     {
       "id": "frontend-image-blob-urls",

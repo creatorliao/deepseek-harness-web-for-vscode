@@ -8,8 +8,16 @@ import * as vscode from "vscode";
 import { DshServerManager, type ServerInfo } from "./serverManager.js";
 import { assembleDocument } from "./documentAssembly.js";
 import { BridgeHost } from "./bridgeHost.js";
-import { dshStartOptions } from "./commands.js";
-import { distRootPath, isDarkTheme, placeholderHtml, statusChromeHtml } from "./dshUi.js";
+import { dshStartOptions, workspaceRoot } from "./commands.js";
+import {
+  distRootPath,
+  isDarkTheme,
+  placeholderHtml,
+  statusChromeHtml,
+  deliverDropToComposer,
+  handleInsertResult,
+} from "./dshUi.js";
+import { t } from "./i18n.js";
 
 const PANEL_TITLE = "DeepSeek Harness";
 
@@ -80,15 +88,20 @@ export class DshPanel {
       () => this.manager.authCookieHeader
     );
 
-    // View-level commands from the placeholder/overlay chrome.
+    // View-level commands from the placeholder/overlay chrome, plus the two
+    // messages of the explorer-reference path (R20260917-01).
     panel.webview.onDidReceiveMessage((msg) => {
-      const m = msg as { type?: string };
+      const m = msg as { type?: string; payload?: unknown; ok?: unknown; text?: unknown };
       if (m.type === "start") {
         void this.manager.start(dshStartOptions()).catch(() => {
           /* state machine drives the overlay */
         });
       } else if (m.type === "stop") {
         this.manager.stop();
+      } else if (m.type === "dsh-context-drop") {
+        void deliverDropToComposer(panel.webview, m.payload, workspaceRoot());
+      } else if (m.type === "dsh-context-insert-result") {
+        handleInsertResult(m);
       }
     });
     panel.onDidDispose(() => {
@@ -111,6 +124,19 @@ export class DshPanel {
   /** Session bound to this panel (02-session-management T3). */
   get boundSessionId(): string | undefined {
     return this.sessionId;
+  }
+
+  /** Whether the panel is showing in the UI (target picking for the context menu). */
+  get isVisible(): boolean {
+    return this.panel?.visible ?? false;
+  }
+
+  /**
+   * Post one message to this panel's webview. Used by the explorer context-menu
+   * entry, which has no webview message of its own to reply to.
+   */
+  postMessage(message: unknown): void {
+    void this.panel?.webview.postMessage(message);
   }
 
   /** Set the editor-tab title to reflect the session (review suggestion 3). */
@@ -153,6 +179,7 @@ export class DshPanel {
         themeDark: isDarkTheme(),
         sessionPreset: this.pendingPreset,
         chromeHtml: statusChromeHtml(),
+        dropHint: t("context.dropHint"),
         log: (m) => console.log("[dsh] " + m),
       });
       this.panel.webview.html = html;

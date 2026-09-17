@@ -39,6 +39,12 @@ export interface CommandTargets {
   openEditorTab: () => void;
   /** Always the secondary-side-bar view. */
   openChatView: () => void;
+  /**
+   * Explorer context menu: add the selected resources to the composer as `@`
+   * references (R20260917-01). This is the entry that works without the Shift
+   * key the webview drag path needs.
+   */
+  addToContext: (uris: readonly vscode.Uri[]) => void;
 }
 
 export function registerCommands(
@@ -76,6 +82,16 @@ export function registerCommands(
     }),
     vscode.commands.registerCommand("deepseek-harness-for-vscode.openPanel", () => {
       targets.openEditorTab();
-    })
+    }),
+    vscode.commands.registerCommand(
+      "deepseek-harness-for-vscode.addToContext",
+      (uri?: vscode.Uri, uris?: vscode.Uri[]) => {
+        // The explorer passes the clicked resource plus the whole selection;
+        // either can be missing depending on how the command was invoked.
+        const selected = uris && uris.length > 0 ? uris : uri ? [uri] : [];
+        if (selected.length === 0) return;
+        targets.addToContext(selected);
+      }
+    )
   );
 }

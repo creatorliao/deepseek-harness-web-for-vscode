@@ -6,8 +6,9 @@ import assert from "node:assert/strict";
 import { SessionPanelManager, VIEW_COLUMN_ACTIVE, VIEW_COLUMN_BESIDE } from "../out/sessionPanels.js";
 
 /** Fake DshPanel recording interactions for assertions. */
-function fakePanel() {
+function fakePanel({ visible = false } = {}) {
   return {
+    isVisible: visible,
     opened: [],
     revealed: [],
     closed: false,
@@ -136,4 +137,34 @@ test("updateTitle forwards to the bound panel only", () => {
   m.updateTitle("s1", "新标题");
   m.updateTitle("nope", "ignored");
   assert.deepEqual(created[0].titles, ["新标题"]);
+});
+
+// ------------------------- message target picking (R20260917-01)
+
+test("visiblePanel(): the visible panel wins, newest first", () => {
+  const created = [];
+  const m = new SessionPanelManager(
+    () => {},
+    () => {
+      const p = fakePanel({ visible: false });
+      created.push(p);
+      return p;
+    }
+  );
+  m.open("s1");
+  m.open("s2");
+  m.open("s3");
+  // Nothing visible → the most recently opened panel (the webview keeps its
+  // state while hidden, so the text is waiting when the user switches back).
+  assert.equal(m.visiblePanel(), created[2]);
+  created[0].isVisible = true;
+  created[2].isVisible = true;
+  assert.equal(m.visiblePanel(), created[2], "newest visible wins");
+  created[2].isVisible = false;
+  assert.equal(m.visiblePanel(), created[0]);
+});
+
+test("visiblePanel(): with no panel at all there is no target", () => {
+  const { m } = makeManager();
+  assert.equal(m.visiblePanel(), undefined);
 });
