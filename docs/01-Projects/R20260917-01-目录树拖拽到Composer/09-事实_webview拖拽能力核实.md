@@ -134,3 +134,17 @@ zone.addEventListener('drop', (e) => {
    - 原始负载被正确转发：`{"type":"dsh-context-drop","payload":{"application/vnd.code.uri-list":"file:///d%3A/code/proj/src/a.ts","text/plain":"src/a.ts"}}`。
    → 因此真机拖不动的原因**不在我们的页面代码**，而在 VS Code 是否把事件交给 iframe（cross-origin iframe + `pointer-events:none` 屏蔽，即上面的第 1 条）。
 3. **仍未验证**：真实跨源拖拽时 `getData` 能否读到 VS Code 私有 mime（探针里的 `DataTransfer` 是页面自己造的，读得到是理所当然）。这一条只能靠真机 + Shift 复测，或改走宿主侧 `TreeDragAndDropController`（`07-待办` 的 E3）。
+
+4. **Cursor 1.128.0 已核对：与 VS Code 同一套逻辑**（关闭本文件 §未验证点 6 / `05-验证` V-03）。Cursor 的 `resources\app\out\vs\workbench\workbench.desktop.main.js` L16676 里是同一个 `WebviewWindowDragMonitor`：
+   `DRAG_START→n()`、`DRAG_END→i()`、`MOUSE_MOVE(buttons===0)→i()`、`DRAG→r.shiftKey?i():n()`、`DRAG_OVER→r.shiftKey?i():n()`。→ **Cursor 上同样只有 Shift 这一条放行路径**。
+
+5. **为什么我们绕不过去**（本机 1.105.1 代码级证据，两条都实测过）：
+   - 屏蔽动作是 **workbench 设在自己文档里的 iframe 元素上**：`kb(){this.n&&(this.n.style.pointerEvents="none")}`，恢复是 `lb(){…="auto"}`（bundle L4069，与 `windowDidDragStart()/windowDidDragEnd()` 同一类）。我们的页面是被跨源沙箱包住的 iframe，**碰不到父文档的 DOM**，所以改不掉这个样式。
+   - 唯一能让它恢复的输入，是 **workbench 窗口上带 `shiftKey` 的 `drag`/`dragover` 事件**（同 L537 的 `V9e` 类）。webview 内部脚本确实会回传这个信号（`pre/index.html` L821-840 的 `handleInnerDragEvent` → `postMessage('drag',{shiftKey})`，workbench 侧 L4069 的 `wb(e,t)` 用 `new DragEvent` 重派发），**但它只在 iframe 已经收得到拖拽事件时才触发**——而"收得到"正是被屏蔽的东西。这是死循环：不按 Shift 就没有事件，没有事件就无法上报 Shift。
+   - **没有开关**：`src/vs/workbench/contrib/webview/browser/webview.contribution.ts`（1.105.1）里没有任何 `configurationRegistry` 注册；本机 bundle 也检索不到 `workbench.webview*` 形式的设置项。→ 不能靠改设置绕过。
+
+6. **理论上唯一的"不按 Shift"黑招，以及为什么不建议做**：既然 workbench 接受"带 shiftKey 的 drag 事件"作为放行信号，而 webview 内部脚本的上报条件只要求"`dataTransfer.items` 全部是 `file` 项"，那么注入脚本**自己造一个带 File 项的 `dragover`（`shiftKey:true`）**，就能借道把 workbench 的 webview 全部解除屏蔽。代价：
+   - 我们**无法知道用户何时开始拖拽**（拖拽期间我们收不到任何事件），所以要有效就得**周期性反复伪造**；
+   - 那会让所有 webview 在**任何**拖拽期间都保持可投放，直接抵消 VS Code 屏蔽 iframe 的初衷——**用户在 VS Code 里拖文件去分屏/拖到终端等正常操作，一旦指针经过我们的面板就会被我们截走**；
+   - 依赖的是未公开内部实现（`pre/index.html` 的上报条件 + `wb()` 重派发），上游一改就静默失效。
+   → **判定：不做**（登记在此，避免下一轮重新论证）。等价体验走"官方支持的三条路"：右键入口（已交付）、快捷键（可选）、TreeView 投放区（E3）。
