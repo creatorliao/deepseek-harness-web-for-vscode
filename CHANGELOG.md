@@ -7,6 +7,20 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)，
 版本号遵循[语义化版本](https://semver.org/spec/v2.0.0.html)。
 
+## [0.5.1] - 2026-09-17
+
+### 变更（工程与文档；**运行时行为与 0.5.0 完全一致**）
+
+起因：用户复盘"上次安装与执行过程里有些路径和步骤不太对"。逐条查证后确认五处真实问题，其中三处已固化为机器可查的门禁。
+
+- **新增 `npm run install:local`（`scripts/install-local.js`）**：一条命令把 `dist/` 里那份 vsix 装进本机 VS Code / Cursor——自动按平台找 CLI、`--force` 安装、回显装完的实际版本。此前每次装机要手工现查两个编辑器的 CLI 路径，而 Cursor 的 CLI 并不在直观位置（在 `resources\app\bin\cursor.cmd`，PATH 上的 `cursor` 可能是它自带的 `code` 垫片）。
+  - 脚本自带两个防错：两个编辑器若解析到**同一个 CLI 就跳过并提示**；只解析到 PATH 裸名时额外警告（这台机器上 `code` 会落到 Cursor 的垫片上）。Windows 下命令行整体加引号——否则 `…\Microsoft VS Code\bin\code.cmd` 会被 cmd.exe 按空格拆断，导致"报成功、其实装进另一个编辑器"。
+- **新增 `npm run check:docs`（`scripts/check-docs.js`）**：文档契约自检——主题夹命名/编号/证据文档顺序 + 全库相对链接可达性（含裸相对链接）。起因是一次真实复盘：主题夹的 `分析`/`事实` 被编在管线阶段之前、把 `03-方案` 挤成 `06-方案`，另有一处跨主题链接多写了一层 `../`，两者当时都没有任何东西发现。已用负例夹验证过它能拦住这两类问题。
+- **订正 `README.md` / `README.en.md`**：`deepseekHarness.openTarget` 的默认值写的是 `editorTab`，而代码（`src/openTarget.ts` 的 `DEFAULT_OPEN_TARGET`）、清单（`package.json`）与单测三处实际都是 **`sidebar`**（右侧次级侧边栏）。以代码为准订正「使用」与「配置」两处；`[0.4.0]` 的历史条目按"历史记录不改写"保留，分歧登记在勘误台账 **B7** 与待办 **G-25**，等待用户定性到底该以哪边为准。
+- **`AGENTS.md §7` 纠错**：原先写"受限沙箱下用 `node --test --test-isolation=none` 即可"，实测该开关只解决"每个测试文件各起一个进程"，`test/serverManager.test.js` 里 12 条用例自身要 spawn 假 dsh，**仍然全红**；并写明 `npm run package` 在受限环境跑不完的原因，以及**禁止加 `--no-dependencies`** 绕过（A/B 实测该开关会静默丢掉全部 19 个 `node_modules/ws/**`，正是历史事故"vsix 缺少 ws"的复现条件）。
+- **文档规范新增两条**：`docs/02-Areas/20260914-03-文档与PARA规范.md` 补编号规则（管线阶段固定槽位、证据类排在其后、阅读顺序靠 `00-README.md` 表达）与「临时文件不许落 `docs/`」。
+- **发布规范补装机章节**：`docs/02-Areas/20260914-07-发布与版本规范.md` 新增 §3.1（一条命令装机 + **装完必须「重新加载窗口」** + 旧版本目录残留说明）与 §3.2（手工核验表：两个编辑器的 CLI 路径、扩展落盘位置、版本核对命令）；发版清单加入 `check:docs` 与装机核验。
+
 ## [0.5.0] - 2026-09-17
 
 ### 新增
@@ -25,7 +39,7 @@
 
 - 需要 dsh `0.1.2-rc.1` 以上（未变）；本次不涉及上游四个破坏面，兼容矩阵不变。
 - 「拖到 composer 即可用」这一跳的**真机鼠标验收需用户完成**（本机无法自动化 GUI 拖拽）：一分钟验收步骤见
-  [`docs/01-Projects/R20260917-01-目录树拖拽到Composer/08-验证_目录树拖拽到Composer.md`](docs/01-Projects/R20260917-01-目录树拖拽到Composer/08-验证_目录树拖拽到Composer.md)。
+  [`docs/01-Projects/R20260917-01-目录树拖拽到Composer/05-验证_目录树拖拽到Composer.md`](docs/01-Projects/R20260917-01-目录树拖拽到Composer/05-验证_目录树拖拽到Composer.md)。
 
 ## [0.4.0] - 2026-09-15
 

@@ -142,7 +142,9 @@ R{YYYYMMDD}-xx-主题
   | `npm run watch` | 增量编译（F5 开发宿主用） |
   | `npm test` | 编译 + 单测 |
   | `npm run package` | 打包到 `dist/`（**只保留最新一份** vsix，文件名带版本号） |
+  | `npm run install:local` | **把 `dist/` 里那份 vsix 装进本机编辑器**（自动找 VS Code / Cursor 的 CLI；可写 `-- code` / `-- cursor` 限定）。装完需在编辑器里「重新加载窗口」 |
   | `npm run check:dsh` | **核对上游 dsh 跟随状态**（见 §8） |
+  | `npm run check:docs` | **文档契约自检**：主题夹命名/编号/证据文档顺序 + 全库相对链接可达性（改 `docs/` 后必跑） |
   | `node scripts/smoke.js` | 真实 dsh 冒烟（CI 三平台用） |
   | `para-structure doctor --json` | 检测 `docs/` 四维结构是否完整 |
 
@@ -155,7 +157,12 @@ R{YYYYMMDD}-xx-主题
 
 - **所有"打开界面"的路径必须收敛到 `extension.ts` 的 `openUi()` 这一个路由点**——不要在新增路径上自己决定开到哪里，否则设置会在一部分路径上生效、另一部分被静默忽略。
 
-- **环境安装注意**（2026-09-14 实测）：受限沙箱下 `npm install` 会因 lifecycle script 的 piped stdio 报 `spawn EPERM`，本仓依赖全是纯 JS/类型包，用 `npm install --ignore-scripts` 即可；`node --test` 默认按文件 spawn 子进程，受限环境下用 `node --test --test-isolation=none`。
+- **环境注意（2026-09-14 实测；09-17 第二次实测纠正了第一次的结论）**：受限沙箱会拒绝带管道的子进程（表现为 `spawn EPERM`），此时：
+  - **`npm test` 与 `npm run package` 都跑不完**。`--test-isolation=none` 只解决"每个测试文件各起一个子进程"，`test/serverManager.test.js` 里 12 条用例**自身要 spawn 假 dsh**，仍然全红——**这个开关不足以在受限环境跑通测试**；
+  - `npm run package` 里 vsce 会 `execFile('npm', …)` 做依赖探测。**不要为绕过它加 `--no-dependencies`**：实测该开关会**静默丢掉全部 19 个 `node_modules/ws/**`**（vsce 对 node_modules 不认 `files` 白名单），正好复现 [11-修复_vsix缺少ws依赖](docs/01-Projects/R20260817-01-桥架构与IDE内嵌/11-修复_vsix缺少ws依赖.md) 那次事故；理由写在 `scripts/package.js` 注释里。
+  - → **发版、全量测试、装机必须在非受限环境执行**；受限环境只够跑 `npm run compile`、`node --check media/bridge-client.js`、`npm run check:docs`。
+  - `npm install` 若因 lifecycle script 报 `spawn EPERM`，用 `npm install --ignore-scripts`（本仓依赖全是纯 JS/类型包）。
+  - `para-structure` 在受限环境会连刷 `日志系统初始化失败: Permission denied '~/.para-structure/logs/…'` —— **不影响落盘**，以 `--json` 输出的 `success` 为准。
 - **安全约束**：扩展只能向 `127.0.0.1`/`localhost` 代发请求；**不得弱化 DSH 的 `/api` 信任围栏**；`dsh web` 不允许 `--host 0.0.0.0`。
 - **目录布局**：
 
@@ -164,7 +171,7 @@ R{YYYYMMDD}-xx-主题
   | `src/` | 扩展宿主 TypeScript 源码 |
   | `media/` | webview 注入脚本（纯 JS）与静态资产 |
   | `test/` | 单测（`*.test.js`，`node:test` 零依赖） |
-  | `scripts/` | `smoke.js`（冒烟）、`package.js`（打包到 dist）、`check-dsh-latest.js`（上游巡检） |
+  | `scripts/` | `smoke.js`（冒烟）、`package.js`（打包到 dist）、`install-local.js`（装进本机编辑器）、`check-dsh-latest.js`（上游巡检）、`check-docs.js`（文档契约自检）、`diagnose-dsh.js`（环境诊断） |
   | `docs/` | PARA 知识库 |
   | `dist/` | 构建产物：**永远只有一份** vsix（gitignore） |
 

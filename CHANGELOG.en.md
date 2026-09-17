@@ -7,6 +7,20 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-09-17
+
+### Changed (tooling and documentation only — **runtime behaviour is identical to 0.5.0**)
+
+Triggered by a user review: "some paths and steps in the last install/run felt wrong". Five real problems were confirmed; three of them are now machine-checked gates.
+
+- **New `npm run install:local` (`scripts/install-local.js`)** — installs the single vsix in `dist/` into the local VS Code / Cursor in one command: finds each CLI per platform, installs with `--force`, and echoes the version that actually landed. Previously every install meant four manual lookups, and Cursor's CLI is not where one would guess (`resources\app\bin\cursor.cmd`; the `cursor` on PATH can be its bundled `code` shim).
+  - Two guards are built in: if both editors resolve to the **same CLI** the second one is skipped with a notice, and resolving to a bare PATH name warns (on this machine `code` lands on Cursor's shim). On Windows the command line is quoted as a whole — otherwise `…\Microsoft VS Code\bin\code.cmd` is split on its spaces by cmd.exe, which reports success while installing into the wrong editor.
+- **New `npm run check:docs` (`scripts/check-docs.js`)** — documentation contract check: topic-folder naming/numbering, evidence-vs-pipeline ordering, and reachability of every relative link in `docs/` (bare relative links included). It exists because a real topic folder numbered its evidence documents before the pipeline stages (pushing `03-方案` to `06-方案`) and one cross-topic link had one `../` too many — nothing caught either at the time. Verified against negative fixtures.
+- **Fixed `README.md` / `README.en.md`**: they documented `deepseekHarness.openTarget` as defaulting to `editorTab`, while the code (`src/openTarget.ts`'s `DEFAULT_OPEN_TARGET`), the manifest and the unit test all say **`sidebar`** (the right-hand Secondary Side Bar). Corrected in both the Usage and Configuration sections; the historical `[0.4.0]` entry is left untouched per the "history is not rewritten" rule, and the discrepancy is logged in the erratum ledger **B7** / todo **G-25** pending the user's call.
+- **`AGENTS.md` §7 corrected**: the previous claim that `node --test --test-isolation=none` makes the suite run in a restricted sandbox is wrong — that flag only fixes per-file process spawning, while 12 tests in `test/serverManager.test.js` spawn a fake dsh themselves and still fail. The section now also records why `npm run package` cannot finish there, and **forbids `--no-dependencies`** as a workaround (A/B measured: it silently drops all 19 `node_modules/ws/**` files, which is exactly the historical "vsix without ws" failure).
+- **Documentation rules extended**: `docs/02-Areas/20260914-03-文档与PARA规范.md` now states the numbering rule (fixed slots for pipeline stages, evidence documents after them, reading order expressed in `00-README.md` rather than by renumbering) and forbids dropping scratch files into `docs/`.
+- **Release spec gained an install section**: `docs/02-Areas/20260914-07-发布与版本规范.md` §3.1 (one-command install, **reload the window afterwards**, stale version directories) and §3.2 (manual verification table: CLI paths, where the payload lands, version check command); the release checklist now includes `check:docs` and install verification.
+
 ## [0.5.0] - 2026-09-17
 
 ### Added

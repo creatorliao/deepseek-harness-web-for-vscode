@@ -27,7 +27,8 @@
 | 当前适配基线 / 兼容矩阵 | [02-Areas/dsh-baseline.json](02-Areas/dsh-baseline.json)（机器可读）+ 上述规范的兼容矩阵表 |
 | 为什么内嵌要这么写（桥架构） | [01-Projects/R20260817-01-桥架构与IDE内嵌/09-架构提案_by-deepseek.md](01-Projects/R20260817-01-桥架构与IDE内嵌/09-架构提案_by-deepseek.md) → [03-方案_传输桥架构.md](01-Projects/R20260817-01-桥架构与IDE内嵌/03-方案_传输桥架构.md) |
 | 写代码要守什么规矩 | [02-Areas/20260914-01-工程规范.md](02-Areas/20260914-01-工程规范.md) + [02-Areas/20260914-02-扩展与Webview规范.md](02-Areas/20260914-02-扩展与Webview规范.md) |
-| 怎么发一个新版本 | [02-Areas/20260914-07-发布与版本规范.md](02-Areas/20260914-07-发布与版本规范.md) |
+| 怎么发一个新版本 | [02-Areas/20260914-07-发布与版本规范.md](02-Areas/20260914-07-发布与版本规范.md)（含 `npm run install:local` 一条命令装机） |
+| **为什么拖文件进 composer 要按住 Shift / `@` 引用是怎么写进去的** | [01-Projects/R20260917-01-目录树拖拽到Composer/00-README.md](01-Projects/R20260917-01-目录树拖拽到Composer/00-README.md)（建议阅读顺序：01→02→08→09→10→03→04→05→06→07） |
 | DSH 的协议/围栏/boot 注入事实 | [03-Resources/20260914-01-DSH上游事实与协议速查.md](03-Resources/20260914-01-DSH上游事实与协议速查.md) |
 | 某个历史问题当时怎么修的 | 对应主题夹的 `00-README.md` 索引 → 该夹内 `NN-修复_*.md` |
 

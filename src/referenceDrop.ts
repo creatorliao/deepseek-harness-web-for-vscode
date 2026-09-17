@@ -10,7 +10,7 @@
 // `read` tool. The `@` picker's chip serializes to exactly that string, so
 // writing the text ourselves is byte-identical to picking the file from the
 // completion list (verified against dsh 0.1.5-rc.2; see
-// docs/01-Projects/R20260917-01-目录树拖拽到Composer/05-事实_DSH-Composer与提及机制.md).
+// docs/01-Projects/R20260917-01-目录树拖拽到Composer/10-事实_DSH-Composer与提及机制.md).
 //
 // What VS Code hands us is NOT that text. A drag from the explorer carries no
 // File objects at all (string-only DataTransfer) and the paths sit in VS Code's

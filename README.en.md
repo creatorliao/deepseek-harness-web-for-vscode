@@ -48,7 +48,8 @@ Compatible dsh versions for each dsh4vscode release — any other pairing is ref
 
 | dsh4vscode version | Compatible dsh |
 |---|---|
-| `0.5.0` (current) | `0.1.2-rc.1`, `0.1.5-rc.1`, `0.1.5-rc.2` |
+| `0.5.1` (current) | `0.1.2-rc.1`, `0.1.5-rc.1`, `0.1.5-rc.2` |
+| `0.5.0` | `0.1.2-rc.1`, `0.1.5-rc.1`, `0.1.5-rc.2` |
 | `0.4.0` | `0.1.2-rc.1`, `0.1.5-rc.1`, `0.1.5-rc.2` |
 | `0.3.4` | `0.1.2-rc.1`, `0.1.5-rc.1`, `0.1.5-rc.2` |
 | `0.3.3` | `0.1.1-rc.7` and older |
@@ -84,7 +85,7 @@ name is permanently void. The extension is therefore available on Open VSX only.
 ## Usage
 
 1. Click the **DeepSeek Harness** icon in the activity bar → dsh starts automatically (if not running) and the launcher sidebar shows the server status, version and URL.
-2. The DSH UI opens in an **editor tab** once the server is ready (`dsh web: http://127.0.0.1:<port>`).
+2. The DSH UI opens according to `deepseekHarness.openTarget` once the server is ready (`dsh web: http://127.0.0.1:<port>`) — **the default is `sidebar`**, i.e. the right-hand Secondary Side Bar, so it never covers the editor (use `在编辑器标签页打开` from the command palette when you want the wide surface).
 3. When the server is ready, the launcher offers **Stop DeepSeek Harness** and **Open View** (full-width buttons); click **Update available: x.y.z →** to upgrade dsh.
 
 To make DSH use your project as its default workspace, open that folder in the window first (the launcher footer shows the active workspace).
@@ -95,7 +96,7 @@ To make DSH use your project as its default workspace, open that folder in the w
 |---|---|---|
 | `deepseekHarness.themeSync` | `follow` | Follow the VS Code color theme into the embedded DSH UI; `off` leaves DSH's own appearance untouched. |
 | `deepseekHarness.dshPath` | *(empty)* | **Optional.** Full path to the `dsh` executable. **Leave empty to auto-detect** (npm global → `$DSH_BIN` → Homebrew → nvm → npx cache) — the default and normally sufficient. Set it only when the wrong `dsh` is picked or auto-detection fails. |
-| `deepseekHarness.openTarget` | `editorTab` | Where the DSH UI opens by default: `editorTab` = an editor tab in the **right-hand** editor group (default — always visible and wide enough to type in); `sidebar` = a view in the Secondary Side Bar (narrow). The other surface is always available from the Command Palette. |
+| `deepseekHarness.openTarget` | `sidebar` | Where the DSH UI opens by default: `sidebar` = a view in the right-hand Secondary Side Bar (the default; `src/openTarget.ts`'s `DEFAULT_OPEN_TARGET` and the manifest default both say so); `editorTab` = an editor tab in the right-hand editor group (wide, but takes over the editor area). The other surface is always available from the Command Palette. |
 
 ## Development
 
@@ -105,10 +106,14 @@ npm run compile     # tsc
 npm test            # node:test unit tests
 npm run watch       # incremental compile (for F5)
 npm run package     # build into dist/ (keeps exactly one vsix)
+npm run install:local  # install that vsix into the local VS Code / Cursor (reload the window afterwards)
 npm run check:dsh   # is this project still tracking the newest upstream dsh?
+npm run check:docs  # documentation contract check (naming, numbering, relative links)
 ```
 
 Press `F5` in VS Code to launch the Extension Development Host.
+
+> In a restricted sandbox (which refuses piped child processes with `spawn EPERM`), `npm test` and `npm run package` **cannot finish** — releases, the full test run and installing must happen outside it; see [AGENTS.md](AGENTS.md) §7.
 
 ## Architecture
 

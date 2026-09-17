@@ -48,7 +48,8 @@
 
 | 扩展版本 | 兼容的 dsh 版本 |
 |---|---|
-| `0.5.0`（当前） | `0.1.2-rc.1`、`0.1.5-rc.1`、`0.1.5-rc.2` |
+| `0.5.1`（当前） | `0.1.2-rc.1`、`0.1.5-rc.1`、`0.1.5-rc.2` |
+| `0.5.0` | `0.1.2-rc.1`、`0.1.5-rc.1`、`0.1.5-rc.2` |
 | `0.4.0` | `0.1.2-rc.1`、`0.1.5-rc.1`、`0.1.5-rc.2` |
 | `0.3.4` | `0.1.2-rc.1`、`0.1.5-rc.1`、`0.1.5-rc.2` |
 | `0.3.3` | `0.1.1-rc.7` 及更早 |
@@ -82,7 +83,7 @@ npm run package        # 产物：dist/creatorliao.deepseek-harness-for-vscode-<
 ## 使用
 
 1. 点击活动栏 **DeepSeek Harness** 图标 → dsh 自动启动（若未运行），侧边栏显示服务状态、版本与 URL。
-2. 服务就绪后（`dsh web: http://127.0.0.1:<端口>`），DSH UI 在**编辑器标签页**打开。
+2. 服务就绪后（`dsh web: http://127.0.0.1:<端口>`），DSH UI 按 `deepseekHarness.openTarget` 打开——**默认 `sidebar`，即右侧次级侧边栏**（不会遮挡编辑器；侧边栏太窄时用命令 `在编辑器标签页打开`）。
 3. 就绪后启动器提供 **Stop DeepSeek Harness** 与 **Open View**（全宽按钮）；点 **有新版本：x.y.z →**（随界面语言本地化）可升级 dsh。
 
 想让 DSH 以你的项目为默认工作区，先在窗口里打开该文件夹（启动器底部会显示当前工作区）。
@@ -93,7 +94,7 @@ npm run package        # 产物：dist/creatorliao.deepseek-harness-for-vscode-<
 |---|---|---|
 | `deepseekHarness.themeSync` | `follow` | 将 VS Code 颜色主题同步到内嵌 DSH 界面；`off` 尊重 DSH 自身外观设置。 |
 | `deepseekHarness.dshPath` | *（空）* | **可选**。`dsh` 可执行文件的完整路径。**留空即自动探测**（npm 全局 → `$DSH_BIN` → Homebrew → nvm → npx 缓存）——这是默认且通常够用的方式；仅在自动探测选错、或探测失败时才需要手工指定。 |
-| `deepseekHarness.openTarget` | `editorTab` | DSH 界面默认开在哪里：`editorTab` = **右侧编辑器组**里的标签页（默认，一定看得见、宽度够输入）；`sidebar` = 次级侧边栏里的视图（很窄）。另一种形态随时可用命令面板打开（`在侧边栏打开` / `在编辑器标签页打开`）。 |
+| `deepseekHarness.openTarget` | `sidebar` | DSH 界面默认开在哪里：`sidebar` = **右侧次级侧边栏**里的视图（默认；源码 `src/openTarget.ts` 的 `DEFAULT_OPEN_TARGET` 与 `package.json` 的配置默认值都是它）；`editorTab` = 右侧编辑器组里的标签页（宽，但会占掉编辑器区）。另一种形态随时可用命令面板打开（`在侧边栏打开` / `在编辑器标签页打开`）。 |
 
 ## 开发
 
@@ -103,10 +104,14 @@ npm run compile     # tsc
 npm test            # node:test 单元测试
 npm run watch       # 增量编译（配合 F5）
 npm run package     # 打包到 dist/（只保留最新一份 vsix）
+npm run install:local  # 把 dist/ 里那份装进本机 VS Code / Cursor（装完需「重新加载窗口」）
 npm run check:dsh   # 核对是否已跟上上游最新 dsh
+npm run check:docs  # 文档契约自检（命名/编号/相对链接）
 ```
 
 在 VS Code 中按 `F5` 启动扩展开发宿主。
+
+> 受限沙箱（拒绝带管道的子进程，报 `spawn EPERM`）下 `npm test` 与 `npm run package` **跑不完**——发版、全量测试、装机都要在非受限环境执行；详见 [AGENTS.md](AGENTS.md) §7。
 
 ## 架构
 

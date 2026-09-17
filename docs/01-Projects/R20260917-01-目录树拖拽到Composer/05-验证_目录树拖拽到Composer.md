@@ -41,10 +41,10 @@
 
 | # | 缺口 | 严重度 | 依据 |
 |---|---|---|---|
-| V-01 | **「真机鼠标拖拽 → composer 出现引用」这一跳未实测**。本机无 GUI 自动化（webview 拖拽依赖真实 workbench 拖拽数据），因此：① VS Code 是否真把内部 mime 的数据交给跨源 iframe；② 按住 Shift 的放行是否在本机 1.105.1 生效 | **高**（决定入口 A 是否可用） | `04-事实` §未验证点 1–2；本次仅完成代码级与单测级验证 |
+| V-01 | **「真机鼠标拖拽 → composer 出现引用」这一跳未实测**。本机无 GUI 自动化（webview 拖拽依赖真实 workbench 拖拽数据），因此：① VS Code 是否真把内部 mime 的数据交给跨源 iframe；② 按住 Shift 的放行是否在本机 1.105.1 生效 | **高**（决定入口 A 是否可用） | `09-事实` §未验证点 1–2；本次仅完成代码级与单测级验证 |
 | V-02 | 按住 Shift 的**时机**（须在指针进入面板前按下）只能在真机确认 | 中 | 源码推导（iframe 内的 shift 状态只在"全为 file 项"时回传，我们的拖拽不是） |
-| V-03 | Cursor 内嵌 VS Code 1.128.0 是否同样具备 Shift 放行逻辑（源码未核对，只核对了 1.105.1 / 1.93.0） | 中 | `04-事实` §未验证点 6 |
-| V-04 | chip 视觉差异（写入的是纯文本 `@路径`，不是 chip） | 低（有意取舍） | `03-分析` §3.3：上游 chip 的 `serialize()` 即同一字符串，功能等价 |
+| V-03 | Cursor 内嵌 VS Code 1.128.0 是否同样具备 Shift 放行逻辑（源码未核对，只核对了 1.105.1 / 1.93.0） | 中 | `09-事实` §未验证点 6 |
+| V-04 | chip 视觉差异（写入的是纯文本 `@路径`，不是 chip） | 低（有意取舍） | `08-分析` §3.3：上游 chip 的 `serialize()` 即同一字符串，功能等价 |
 
 > 兜底已就位：即便入口 A 完全不可用，「目录树 → composer」仍可通过**资源管理器右键 → 添加到 DSH 输入框（@ 引用）**完成（该入口只依赖官方菜单 API 与已单测的翻译层，无 Shift、无跨源拖拽）。
 
@@ -78,11 +78,28 @@ npm dist-tags: latest 0.1.5-rc.1 ✅ | next 0.1.5-rc.2 ✅ | alpha 0.1.6-alpha.1
 
 ---
 
-*关联文档：[06-方案](06-方案_目录树拖拽到Composer.md) ｜ [07-实施计划](07-实施计划_目录树拖拽到Composer.md) ｜ [10-待办](10-待办_目录树拖拽到Composer.md)*
+*关联文档：[03-方案](03-方案_目录树拖拽到Composer.md) ｜ [04-实施计划](04-实施计划_目录树拖拽到Composer.md) ｜ [07-待办](07-待办_目录树拖拽到Composer.md)*
 
 ## 6. 过程中遇到的两个环境问题（如实登记）
 
 | 问题 | 现象 | 处置 |
 |---|---|---|
-| 沙箱拒绝子进程管道 | 受限模式下 `npm test` / `npm run package` 报 `spawn EPERM`（已用 `spawnSync(process.execPath,…)` 独立复现，与仓库代码无关） | 放开沙箱后重跑：`npm test` 129/129、`npm run package` 成功 |
-| HTTPS 推送被拒 | `! [remote rejected] main -> main (refusing to allow an OAuth App to create or update workflow .github/workflows/upstream-watch.yml without workflow scope)`——未推送的历史提交 **7a7ef2b** 含工作流文件改动，而本机 HTTPS 凭据（Git Credential Manager，经 VS Code）与 `gh` 令牌的 scope 均只有 `gist/read:org/repo` | 改用**本机已配置的 SSH 密钥**推送（同一账号 `creatorliao`，SSH 不受 OAuth scope 限制），**未改动 `origin` 配置**。若希望 HTTPS 侧也恢复可用：`gh auth refresh -s workflow`（需交互授权）或换用带 `workflow` scope 的 PAT |
+| 沙箱拒绝子进程管道 | 受限模式下 `npm test` / `npm run package` 报 `spawn EPERM`（已用 `spawnSync(process.execPath,…)` 独立复现，与仓库代码无关） | 放开沙箱后重跑：`npm test` 129/129、`npm run package` 成功。结论已回写 [AGENTS.md §7](../../../AGENTS.md)（并纠正了原先"`--test-isolation=none` 就够"的错误说法） |
+| HTTPS 推送被拒 | `! [remote rejected] main -> main (refusing to allow an OAuth App to create or update workflow .github/workflows/upstream-watch.yml without workflow scope)`——未推送的历史提交 **7a7ef2b** 含工作流文件改动，而本机 HTTPS 凭据（Git Credential Manager，经 VS Code）与 `gh` 令牌的 scope 均只有 `gist/read:org/repo` | 本次改用 SSH 推送；**后续已把 `origin` 的 push 通道固化为 SSH**（`git remote set-url --push`，fetch 仍 HTTPS），规则进 [发布与版本规范 §2](../../02-Areas/20260914-07-发布与版本规范.md) |
+
+## 7. 复盘：这次操作过程里"不对劲"的地方与工程化整改（2026-09-17 用户要求复盘）
+
+用户反馈"路径和操作步骤不太对"。逐条查证后确认**六处真实问题**，其中三处已经变成机器可查的门禁：
+
+| # | 问题（都是实测复现过的） | 影响 | 整改 |
+|---|---|---|---|
+| P1 | **主题夹编号违反仓库惯例**：把 `分析`/`事实` 编在 `03`–`05`，把 `03-方案` 挤成 `06-方案`、`05-验证` 挤成 `08-验证`；而其余 8 个主题夹的管线阶段都固定占 `01`–`07` | 按编号找文件会找错；与既有夹子不一致 | 本夹已重排为 `01-讨论/02-需求/03-方案/04-实施计划/05-验证/06-总结/07-待办` + 证据类 `08-分析/09-事实/10-事实`；规则写进 [文档与PARA规范 §7](../../02-Areas/20260914-03-文档与PARA规范.md)，并由 **`npm run check:docs`** 的 R1–R3 兜底 |
+| P2 | **一处跨主题链接多写了一层 `../`**（`07-待办` → `03-待办总表`），指向 `docs/` 而非同级主题夹 | 点击 404 | 已修；并由 **`check:docs` 的 R4** 兜底（全库相对链接可达性，含裸相对链接） |
+| P3 | 子智能体的调研草稿被写进 `docs/03-Resources/_research-*.md`（`_` 前缀绕开了命名规则） | 临时产物混进知识库 | 内容已按类型正式落进本夹（`09-事实`/`10-事实`），规范新增「临时文件不许落 `docs/`」 |
+| P4 | **`--no-dependencies` 是个陷阱**：为绕开"打包要 spawn npm"我曾加过这个开关，A/B 实测它**静默丢掉全部 19 个 `node_modules/ws/**`** | 会直接复现 [11-修复_vsix缺少ws依赖](../R20260817-01-桥架构与IDE内嵌/11-修复_vsix缺少ws依赖.md) 那次"装上即崩"事故 | 已回退；`scripts/package.js` 写明**禁止**加这个开关及原因，`AGENTS.md §7` 同步 |
+| P5 | **装机步骤全靠现查**：Cursor 的 CLI 不在 PATH 猜得到的位置（`resources\app\bin\cursor.cmd`，而 PATH 上的 `cursor` 可能指向它自带的 `code` 垫片）；装完还要**重新加载窗口**才生效；旧版本目录会残留 | 每次装机 4 步手工查 | 新增 **`npm run install:local`**（`scripts/install-local.js`，跨平台候选路径 + 版本回显）与 [发布与版本规范 §3.1/§3.2](../../02-Areas/20260914-07-发布与版本规范.md) |
+| P6 | **新装机脚本第一次跑就装错了编辑器**：它把 "VS Code" 解析成 PATH 上的 `code`，而那其实是 **Cursor 的垫片**（回显的 `3.20.21` 是 Cursor 的版本号），于是两次安装都落进 Cursor 却都报成功。根因是 `shell: true` 下带空格的完整路径 `…\Microsoft VS Code\bin\code.cmd` 被 cmd.exe 拆断（与本仓 serverManager 修过的同类问题） | "装好了"是假的 | 已修：Windows 下命令行整体加引号；并且**两个编辑器若解析到同一个 CLI 就跳过并提示**，走到 PATH 裸名时额外警告。修后实测 VS Code 解析为完整路径并回显 **1.105.1**、Cursor 回显 **3.20.21**，两者各自装上 0.5.1 |
+
+**顺带发现（不是本次引入）**：`README(中英)` 与 `CHANGELOG[0.4.0]` 说 `openTarget` 默认 `editorTab`，而代码/清单/单测三处都是 `sidebar`。README 已订正，历史 CHANGELOG 按规范保留，定性待用户 → **G-25** / 勘误台账 **B7**。
+
+**本轮的验证证据**：`npm run check:docs` 在真实仓库为绿；用两个负例夹（证据插队 `02-事实` + 裸相对坏链）实测**都能被拦下并 exit 1**；`vsce ls` 的 A/B 对照（有/无 `--no-dependencies`）是 P4 的判据。

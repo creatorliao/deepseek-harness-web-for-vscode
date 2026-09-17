@@ -21,6 +21,14 @@ fs.rmSync(distDir, { recursive: true, force: true });
 fs.mkdirSync(distDir, { recursive: true });
 
 const vsce = path.join(root, "node_modules", "@vscode", "vsce", "vsce");
+// NOTE: do NOT add `--no-dependencies` here to avoid vsce's `npm list` companion
+// process. Measured on 0.5.0 with `vsce ls`: that flag silently drops all 19
+// `node_modules/ws/**` entries — vsce ignores `files` patterns for node_modules
+// unless dependency detection confirms them — and a package without `ws` fails
+// at activation (the v0.0.11 incident, see
+// docs/01-Projects/R20260817-01-桥架构与IDE内嵌/11-修复_vsix缺少ws依赖.md).
+// Packaging therefore needs an environment that can spawn npm; a restricted
+// sandbox fails here with `spawn EPERM`.
 const result = spawnSync(process.execPath, [vsce, "package", "--out", outFile], {
   cwd: root,
   stdio: "inherit",

@@ -210,7 +210,7 @@ content = [...await serializeAttachments(), ...text === "" ? [] : [{ type: "text
 
 1. **只把 `@path` 当普通文本写进 draft**（语义上等价，最省事）。
    公开动作面 `InputActions.setDraft(text)`（`...\contract\input.d.ts:211`）/ `SessionInput.setDraft`（`:174`）/ `paste(text)`（`:251`）。**但拿到这个 facade 需要 `ctx`**——即需要一个 DSH 插件。若走 DOM，必须经过 Lexical 的输入管线（`document.execCommand("insertText")` 触发 `beforeinput`），**直接改 DOM 文本会被下一次 Lexical commit 覆盖**。
-2. **发布一个 DSH 客户端插件**，`inject: ["inputTriggers","sessions"]`，然后 `actx.bail(actx, "slash/input-insert-text", { text: "@src/foo.ts ", span })`（或 `-insert-reference` 造真 chip）。这是 ui-reference 自己走的路，官方支持、最稳，但需要按官方插件机制打包发布。仓库内已有同向结论：`docs\01-Projects\R20260914-02-DSH内嵌原理与教程\04-方案_DSH界面调整与侧边栏收纳.md:221`。
+2. **发布一个 DSH 客户端插件**，`inject: ["inputTriggers","sessions"]`，然后 `actx.bail(actx, "slash/input-insert-text", { text: "@src/foo.ts ", span })`（或 `-insert-reference` 造真 chip）。这是 ui-reference 自己走的路，官方支持、最稳，但需要按官方插件机制打包发布。仓库内已有同向结论：[../R20260914-02-DSH内嵌原理与教程/04-方案_DSH界面调整与侧边栏收纳.md](../R20260914-02-DSH内嵌原理与教程/04-方案_DSH界面调整与侧边栏收纳.md)。
 3. **绕过 composer，直接调 host RPC**（对本项目最现实）：RPC 就是 `POST /api/<endpoint>`（见上），扩展本就在代发 `127.0.0.1` 的 `/api` 请求，把 `[{type:'text', text:"@src/foo.ts …"}]` 作为用户消息投递即可，效果与在输入框里打字发送一致（因为 payload 相同）。**待补**：prompt 端点名 + 是否受 DSH `/api` 信任围栏额外约束（会话/agent 作用域头）。
 4. **模拟"打字 + 选菜单"**（不推荐，且收益为零）：focus `[data-composer-input]` → 输入 `@` + 查询 → 等 `[data-trigger-menu]` 出现 → 对 `#dsh-slash-option-reference-0` 派发 **`mousedown`**（选项只在 mousedown 上 pick，`:1005`）。既然 chip 与纯文本 payload 相同，**picker 不带来任何额外语义**，只带来时序脆弱性。
 

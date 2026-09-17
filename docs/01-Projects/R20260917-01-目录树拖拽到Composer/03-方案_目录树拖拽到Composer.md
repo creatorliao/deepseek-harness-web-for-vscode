@@ -1,7 +1,7 @@
 # 方案：目录树拖拽到 Composer
 
 **日期**: 2026-09-17 ｜ **状态**: 待评审（按用户一次性授权先执行）
-**定位**: 回答"怎么做"。事实底座见 `03-分析`，原始证据见 `04-事实` / `05-事实`。
+**定位**: 回答"怎么做"。事实底座见 `08-分析`，原始证据见 `09-事实` / `10-事实`。
 **承接需求**: `02-需求_目录树拖拽到Composer.md` 的 R1–R8 与验收 A1–A8。
 
 ---
@@ -31,13 +31,13 @@
 
 | # | 事实 | 来源 |
 |---|---|---|
-| F1 | composer = Lexical，根元素 `[data-composer-input]`（`role=textbox`/`aria-multiline`/`contenteditable`）；`[data-phase]` 有歧义、类名是哈希 | `05-事实` §composer 结构 |
-| F2 | 上游把 `PASTE_COMMAND` 绑在编辑器根元素；处理器读 `clipboardData.getData("text/plain")` → `handlers.pasteText` → `keyboard.paste()`（`discrete: true`，**同步提交**）；不查 `isTrusted` | `05-事实`；`CONV` L4589-4600 / L15258-15273 / L12825-12836 / L12701 |
-| F3 | chip 的 `serialize()` 是恒等函数 → **纯文本 `@path` 与 picker 产物逐字节相同**，无任何端侧解析 | `05-事实` §落文本 vs 结构化节点 |
-| F4 | `@` 语法：工作区相对 + 正斜杠、`@"含空格"`、目录尾随 `/`、空格分隔、含 `"`/控制字符跳过 | `05-事实`；上游 `dsh-file-reference/lib/types/grammar.js` |
+| F1 | composer = Lexical，根元素 `[data-composer-input]`（`role=textbox`/`aria-multiline`/`contenteditable`）；`[data-phase]` 有歧义、类名是哈希 | `10-事实` §composer 结构 |
+| F2 | 上游把 `PASTE_COMMAND` 绑在编辑器根元素；处理器读 `clipboardData.getData("text/plain")` → `handlers.pasteText` → `keyboard.paste()`（`discrete: true`，**同步提交**）；不查 `isTrusted` | `10-事实`；`CONV` L4589-4600 / L15258-15273 / L12825-12836 / L12701 |
+| F3 | chip 的 `serialize()` 是恒等函数 → **纯文本 `@path` 与 picker 产物逐字节相同**，无任何端侧解析 | `10-事实` §落文本 vs 结构化节点 |
+| F4 | `@` 语法：工作区相对 + 正斜杠、`@"含空格"`、目录尾随 `/`、空格分隔、含 `"`/控制字符跳过 | `10-事实`；上游 `dsh-file-reference/lib/types/grammar.js` |
 | F5 | DSH 自带拖放判据 `types.includes("Files")`，只收真实文件（转附件）；字符串拖拽直接 `return` 且不 `preventDefault` | `CONV` L15258-15273 邻近 `dsh-client-ui-attachment` |
-| F6 | 窗口内任何 `dragstart` 会让 webview iframe `pointer-events:none`，**只有按住 Shift 恢复** | `04-事实` §证据表；VS Code PR #209211 |
-| F7 | 资源管理器拖拽**不产生 `File` 对象**；路径在 `application/vnd.code.uri-list`（全量含目录）/`text/uri-list`（仅首个）/`ResourceURLs`/`CodeFiles`/`CodeEditors`/`text/plain` | `04-事实` §DataTransfer |
+| F6 | 窗口内任何 `dragstart` 会让 webview iframe `pointer-events:none`，**只有按住 Shift 恢复** | `09-事实` §证据表；VS Code PR #209211 |
+| F7 | 资源管理器拖拽**不产生 `File` 对象**；路径在 `application/vnd.code.uri-list`（全量含目录）/`text/uri-list`（仅首个）/`ResourceURLs`/`CodeFiles`/`CodeEditors`/`text/plain` | `09-事实` §DataTransfer |
 | F8 | **没有**把 webview drop 交给扩展宿主的官方 API | `@types/vscode` 1.105.0 全文检索 |
 | F9 | 扩展已有传输桥（`http`/`ws`/`clipboard` + `webview.onDidReceiveMessage`），两个承载面共用 | `src/bridgeHost.ts`、`src/dshUi.ts` |
 | F10 | `workspaceRoot()` = DSH 子进程 cwd = 引用路径的解析根 | `src/commands.ts:10`、`src/extension.ts:119` |
@@ -124,7 +124,7 @@
 
 | # | 风险 | 影响 | 对策 |
 |---|---|---|---|
-| K1 | 用户不知道要按 **Shift**，以为功能坏了（不按 Shift 时文件被编辑器打开） | 体验落差 | README + CHANGELOG 写明；页面内拖拽提示浮层；`08-验证` 给出一分钟自测步骤 |
+| K1 | 用户不知道要按 **Shift**，以为功能坏了（不按 Shift 时文件被编辑器打开） | 体验落差 | README + CHANGELOG 写明；页面内拖拽提示浮层；`05-验证` 给出一分钟自测步骤 |
 | K2 | 跨源 iframe 里 `getData` 可能被 Chromium 过滤（规范无跨源条款，whatwg/html#12807 称不可靠） | 入口 A 读不到路径 | ① 六键优先级兜底；② 读不到 → **明确中文提示**（不静默）；③ 入口 B 保底 |
 | K3 | #237958：1.96.3 上"按 Shift 也捕不到"（open） | 入口 A 在部分版本完全失效 | 入口 B 保底；`07-待办` 登记真机复核 |
 | K4 | 合成 `paste` 被上游后续版本改掉（`PASTE_COMMAND` 绑定/字段变化） | 写入失效 | 写入层有 `execCommand` 兜底 + 结果回报（失败会提示，不静默）；登记进上游巡检面 |
@@ -139,7 +139,7 @@
 |---|---|
 | 静态 | `npm run compile`（零 issue）、`node --check media/bridge-client.js` |
 | 单测 | `npm test`：`test/referenceDrop.test.js`（语法/优先级/上限/跳过/相对化）、`test/bridgeClient.test.js`（臂条件 + 写入选路 + 既有回归）、`test/sessionPanels.test.js`（选面） |
-| 真机（用户 1 分钟） | `08-验证` A 组：拖 1 个文件（按住 Shift）/拖 3 个 / 草稿不丢 / 侧边栏形态 / 不按 Shift 的表现 / 右键入口 / OS 文件拖拽仍走附件 |
+| 真机（用户 1 分钟） | `05-验证` A 组：拖 1 个文件（按住 Shift）/拖 3 个 / 草稿不丢 / 侧边栏形态 / 不按 Shift 的表现 / 右键入口 / OS 文件拖拽仍走附件 |
 | 兼容 | VS Code 1.105.1 + Cursor；`engines.vscode` 不动 |
 
 ## 9. 被否决的方案（避免下一轮重开）
@@ -154,4 +154,4 @@
 
 ---
 
-*关联文档：[02-需求](02-需求_目录树拖拽到Composer.md) ｜ [03-分析](03-分析_参考项目与可行性.md) ｜ [04-事实](04-事实_webview拖拽能力核实.md) ｜ [05-事实](05-事实_DSH-Composer与提及机制.md) ｜ [07-实施计划](07-实施计划_目录树拖拽到Composer.md)*
+*关联文档：[02-需求](02-需求_目录树拖拽到Composer.md) ｜ [08-分析](08-分析_参考项目与可行性.md) ｜ [09-事实](09-事实_webview拖拽能力核实.md) ｜ [10-事实](10-事实_DSH-Composer与提及机制.md) ｜ [04-实施计划](04-实施计划_目录树拖拽到Composer.md)*
