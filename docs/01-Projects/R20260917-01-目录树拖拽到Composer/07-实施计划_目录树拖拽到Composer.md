@@ -86,12 +86,12 @@ T7 ──> T8(编译/测试/打包/升版) ──> T9(安装 VS Code) ──> T1
 ### T9 — 安装到 VS Code ✅
 
 - 命令：`code --install-extension dist/...vsix --force`
-- **完成标准**：`code --list-extensions --show-versions` 显示 0.5.0。
+- **完成标准**：`code --list-extensions --show-versions` 显示 0.5.0。 → 实测 ✅（VS Code 1.105.1）
 
 ### T10 — 安装到 Cursor ✅
 
 - 命令：`cursor --install-extension dist/...vsix --force`
-- **完成标准**：Cursor 扩展列表显示 0.5.0（或安装命令返回成功）。
+- **完成标准**：Cursor 扩展列表显示 0.5.0（或安装命令返回成功）。 → 实测 ✅（Cursor 3.20.21）
 
 ### T11 — 真机拖拽验收（**留给用户**） ⏳
 

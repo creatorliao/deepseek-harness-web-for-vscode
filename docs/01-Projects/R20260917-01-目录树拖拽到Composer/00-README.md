@@ -25,6 +25,6 @@
 ## 当前状态与未闭环项
 
 - 需求、调查、方案、计划、实施、验证、发版、装机全流程已按用户一次性授权（见 `01-讨论` §3）连续推进，中途未打断用户。
-- 交付版本 **0.5.0**（`dist/creatorliao.deepseek-harness-for-vscode-0.5.0.vsix`），已安装到 VS Code 与 Cursor。
+- 交付版本 **0.5.0**（`dist/creatorliao.deepseek-harness-for-vscode-0.5.0.vsix`），已安装到 **VS Code 1.105.1** 与 **Cursor 3.20.21**（均显示 `@0.5.0`），已提交并推送到 `origin/main`（`deaba30`）。
 - **唯一未闭环项**：拖拽的真机鼠标验收（`08-验证` §5 的 A1–A7，约 1 分钟）——本机无法自动化 GUI 拖拽。
 - 所有"本应由用户确认"的点集中登记在 `01-讨论` §4 与 `10-待办`（C1 / C5 / C-drop）。
