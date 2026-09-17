@@ -123,3 +123,14 @@ zone.addEventListener('drop', (e) => {
 5. **key 的实际大小写未验证**（规范要求小写化，VS Code 自身比较大小写不敏感）。
 6. **Cursor 1.128.0（fork）未核对**：本机 `D:\Users\liaohai1\AppData\Local\Programs\cursor\` 未检索。若需在 Cursor 上支持，需按同样方法核对 `resources\app\out\vs\workbench\workbench.desktop.main.js` 是否含 `n.shiftKey` 分支。
 7. **未找到成功的先例代码**：本次检索只找到失败报告（#237958、SO 79010180、cline#5039、kilocode#8451、anthropics/claude-code#25128），未找到任何已发布扩展在 webview 内可靠读取 Explorer 拖拽路径的实现。`OpenAgentd` 的 drop 修复（[commit ad92c0d](https://github.com/lthoangg/OpenAgentd/commit/ad92c0d77c28009a1217537bec0cef7891af2d51)）针对**操作系统文件拖拽**（`files`/`items`/`webkitGetAsEntry` 过滤目录），不适用于 Explorer 内部拖拽。
+
+## 2026-09-17 真机补充（用户实测 + 页面侧探针）
+
+> 本节写在原快照之后，**不改上面的原文**：上面是 09-17 当日的源码取证，这里是同日的实测结果。
+
+1. **真机拖拽：不生效**（用户实测 v0.5.1，VS Code/Cursor）。**未确认用户当时是否按住过 Shift** —— 按上面的源码结论，不按 Shift 一定不进 webview（这正是 `09-17` 那次分析预判的结果），所以这一条**还不能判定 Shift 方案失败**，需要用户补一次带 Shift 的复测。
+2. **页面侧链路已被证明是好的**：`npm run probe:composer`（真实 `dsh web` + headless Chromium + 注入真 `bridge-client.js`）里，用 VS Code 形状的 `dragover`/`drop`（`application/vnd.code.uri-list` + `text/plain`）实测：
+   - `dragover` 被接管（`defaultPrevented=true`）、`drop` 被接管；
+   - 原始负载被正确转发：`{"type":"dsh-context-drop","payload":{"application/vnd.code.uri-list":"file:///d%3A/code/proj/src/a.ts","text/plain":"src/a.ts"}}`。
+   → 因此真机拖不动的原因**不在我们的页面代码**，而在 VS Code 是否把事件交给 iframe（cross-origin iframe + `pointer-events:none` 屏蔽，即上面的第 1 条）。
+3. **仍未验证**：真实跨源拖拽时 `getData` 能否读到 VS Code 私有 mime（探针里的 `DataTransfer` 是页面自己造的，读得到是理所当然）。这一条只能靠真机 + Shift 复测，或改走宿主侧 `TreeDragAndDropController`（`07-待办` 的 E3）。

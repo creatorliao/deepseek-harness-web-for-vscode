@@ -2,7 +2,7 @@
   "name": "deepseek-harness-for-vscode",
   "displayName": "DeepSeek Harness for VS Code",
   "description": "Launch DeepSeek Harness and embed its Web UI inside VS Code & Antigravity — one-click start, editor-tab panel, shared instance with the browser, clipboard and theme sync.",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "publisher": "creatorliao",
   "author": {
     "name": "liaohai1"
@@ -142,6 +142,7 @@
     "test": "tsc -p ./ && node --test",
     "check:dsh": "node scripts/check-dsh-latest.js",
     "check:docs": "node scripts/check-docs.js",
+    "probe:composer": "node scripts/probe-composer-insert.js",
     "diagnose:dsh": "node scripts/diagnose-dsh.js"
   },
   "devDependencies": {

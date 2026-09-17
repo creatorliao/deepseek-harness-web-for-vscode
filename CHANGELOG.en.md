@@ -7,6 +7,21 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.2] - 2026-09-17
+
+### Fixed
+
+- **The explorer context menu wrote the reference and then reported failure, so following the prompt to paste produced TWO identical references** (reported from real use):
+  - **Root cause**: the write path decided success with a **synchronous DOM read**, but DSH's composer is Lexical — an edit goes into editor state and the DOM commits on a **later tick**. The text was already in the composer (the real-machine probe measured 1 copy) while the code reported `{ok:false, reason:"rejected"}`; the host therefore **copied the reference to the clipboard and told the user to press Ctrl+V** — one paste later, two copies. The same criterion also fired the `execCommand` fallback for nothing, and two commits landing is another way to get two copies.
+  - **Fix**: the write path now **waits and judges by content** (is the reference actually in the composer?) instead of comparing DOM strings; per-step budgets are 600ms for paste and 400ms for execCommand, the fallback runs only if the previous step truly did not land, and a success reports `ok:true` — so no clipboard copy and no "press Ctrl+V" prompt.
+  - This also fixes the other face of the same bug: **pasting over a selection that already holds identical text leaves the DOM string unchanged while the write succeeded** — "did it change?" misreports that too.
+- **New real-machine probe `npm run probe:composer`** (`scripts/probe-composer-insert.js`): starts a real `dsh web` plus headless Chromium, injects the real `bridge-client.js`, and measures how many copies land, what is reported, and whether a VS Code-shaped drag payload is forwarded. The defect escaped every unit test because the fake composer committed **synchronously**, erasing the very property that matters; the probe is now a required release step whenever the write path changes.
+- **The drag entry does not work on a real machine** (unconfirmed whether Shift was held). The page-side chain is proven healthy by the probe (VS Code-shaped `dragover`/`drop` are taken over and the payload is forwarded verbatim), so the blocker is whether VS Code hands the event to the iframe — the Shift precondition for webview drags. Retest steps and the fallback (a TreeView drop zone) are tracked in the topic folder's `07-待办` (T13/E3).
+
+### Docs
+
+- [Extension & webview spec](docs/02-Areas/20260914-02-扩展与Webview规范.md) gained **§3.1 "Writing into an upstream rich-text editor: never judge success with a synchronous DOM read"** (with both real misjudgements explained) and a matching pre-commit checklist item.
+
 ## [0.5.1] - 2026-09-17
 
 ### Changed (tooling and documentation only — **runtime behaviour is identical to 0.5.0**)

@@ -145,6 +145,7 @@ R{YYYYMMDD}-xx-主题
   | `npm run install:local` | **把 `dist/` 里那份 vsix 装进本机编辑器**（自动找 VS Code / Cursor 的 CLI；可写 `-- code` / `-- cursor` 限定）。装完需在编辑器里「重新加载窗口」 |
   | `npm run check:dsh` | **核对上游 dsh 跟随状态**（见 §8） |
   | `npm run check:docs` | **文档契约自检**：主题夹命名/编号/证据文档顺序 + 全库相对链接可达性（改 `docs/` 后必跑） |
+  | `npm run probe:composer` | **真机探针**：起真实 `dsh web` + headless Chromium，对着真 composer 实测"写入几次 / 回报什么 / 拖拽负载有没有转发"。**改 `media/bridge-client.js` 的写入面必跑**（理由见 [扩展与 Webview 规范](docs/02-Areas/20260914-02-扩展与Webview规范.md) §3.1）。需要 `playwright`（已装则无需额外步骤；系统 Chrome 亦可） |
   | `node scripts/smoke.js` | 真实 dsh 冒烟（CI 三平台用） |
   | `para-structure doctor --json` | 检测 `docs/` 四维结构是否完整 |
 
@@ -171,7 +172,7 @@ R{YYYYMMDD}-xx-主题
   | `src/` | 扩展宿主 TypeScript 源码 |
   | `media/` | webview 注入脚本（纯 JS）与静态资产 |
   | `test/` | 单测（`*.test.js`，`node:test` 零依赖） |
-  | `scripts/` | `smoke.js`（冒烟）、`package.js`（打包到 dist）、`install-local.js`（装进本机编辑器）、`check-dsh-latest.js`（上游巡检）、`check-docs.js`（文档契约自检）、`diagnose-dsh.js`（环境诊断） |
+  | `scripts/` | `smoke.js`（冒烟）、`package.js`（打包到 dist）、`install-local.js`（装进本机编辑器）、`check-dsh-latest.js`（上游巡检）、`check-docs.js`（文档契约自检）、`probe-composer-insert.js`（真机写入探针）、`diagnose-dsh.js`（环境诊断） |
   | `docs/` | PARA 知识库 |
   | `dist/` | 构建产物：**永远只有一份** vsix（gitignore） |
 

@@ -18,8 +18,15 @@ const SCRIPT = require("node:fs").readFileSync(
   "utf8"
 );
 
-/** A fake Lexical-ish composer element (the real one is `[data-composer-input]`). */
-function fakeComposer(attrs = {}) {
+/**
+ * A fake Lexical-ish composer element (the real one is `[data-composer-input]`).
+ *
+ * `commitDelayMs` models what the real editor does and what an earlier version
+ * of this test got wrong: Lexical applies an edit to editor STATE and commits
+ * the DOM on a later tick, so a synchronous read-back cannot decide success.
+ * `sticky` models a composer that refuses the text entirely.
+ */
+function fakeComposer(attrs = {}, options = {}) {
   const el = {
     textContent: "",
     focused: false,
@@ -30,16 +37,28 @@ function fakeComposer(attrs = {}) {
     focus() {
       el.focused = true;
     },
-    // Simulate the frontend's paste handling: it reads `clipboardData` and
-    // inserts the text synchronously (Lexical `applyEdit(..., discrete)`).
     dispatchEvent(event) {
+      if (options.sticky) return true;
       if (event && event.type === "paste" && event.clipboardData) {
-        el.textContent += event.clipboardData.getData("text/plain");
+        const text = event.clipboardData.getData("text/plain");
+        if (options.commitDelayMs) setTimeout(() => (el.textContent += text), options.commitDelayMs);
+        else el.textContent += text;
       }
       return true;
     },
   };
   return el;
+}
+
+/** Wait for the async insert result (the write path bounds itself with timers). */
+async function waitForInsertResult(h, timeoutMs = 2000) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const msg = h.posted.find((m) => m.type === "dsh-context-insert-result");
+    if (msg) return msg;
+    if (Date.now() > deadline) return undefined;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
 }
 
 /** A drag event stub carrying the mime types VS Code writes. */
@@ -68,6 +87,7 @@ function loadBridge(bridgeInit, options = {}) {
   const nativeFetchCalls = [];
   const listeners = {};
   const docListeners = {};
+  const execCommands = [];
   const composer = options.composer === undefined ? fakeComposer() : options.composer;
 
   const window = {
@@ -101,7 +121,10 @@ function loadBridge(bridgeInit, options = {}) {
     querySelectorAll: () => (composer ? [composer] : []),
     createElement: () => ({ style: {}, textContent: "" }),
     body: { appendChild: () => {} },
-    execCommand: () => false,
+    execCommand: (_command, _ui, value) => {
+      execCommands.push(value);
+      return false;
+    },
   };
   class FakeDataTransfer {
     constructor() {
@@ -149,7 +172,7 @@ function loadBridge(bridgeInit, options = {}) {
   );
   run(window, location, navigator, acquireVsCodeApi, URL, Headers, Response, DOMException);
 
-  return { posted, nativeFetchCalls, window, listeners, docListeners, composer };
+  return { posted, nativeFetchCalls, window, listeners, docListeners, composer, execCommands };
 }
 
 test("fetch with a URL object relays the correct path (regression: /undefined)", async () => {
@@ -323,4 +346,34 @@ test("a read-only composer reports failure instead of pretending", () => {
   assert.equal(result.reason, "no-composer");
   // The text still comes back so the host can put it on the clipboard.
   assert.equal(result.text, "@src/a.ts ");
+});
+
+// Regression (2026-09-17, defect: the context menu inserted the reference TWICE)
+// — the real composer applies the edit to editor state and commits the DOM on a
+// later tick. Deciding success with a synchronous read-back reported "rejected"
+// while the text was on its way; the extension host then copied the reference to
+// the clipboard and told the user to press Ctrl+V, so pasting produced a second
+// copy. `node scripts/probe-composer-insert.js` measured the real editor.
+
+test("an asynchronously committed composer is a success, inserted exactly once", async () => {
+  const h = loadBridge(undefined, { composer: fakeComposer({}, { commitDelayMs: 30 }) });
+  h.listeners.message.forEach((fn) => fn({ data: { type: "dsh-context-insert", text: "@src/a.ts" } }));
+  const result = await waitForInsertResult(h);
+  assert.ok(result, "no result was reported");
+  assert.equal(result.ok, true);
+  assert.equal(result.reason, "paste");
+  assert.equal(h.composer.textContent.split("@src/a.ts").length - 1, 1, "inserted more than once");
+  // The fallback must not fire once the paste has landed — that is the other way
+  // one reference becomes two.
+  assert.deepEqual(h.execCommands, []);
+});
+
+test("a composer that refuses the text reports failure after both attempts", async () => {
+  const h = loadBridge(undefined, { composer: fakeComposer({}, { sticky: true }) });
+  h.listeners.message.forEach((fn) => fn({ data: { type: "dsh-context-insert", text: "@src/a.ts" } }));
+  const result = await waitForInsertResult(h);
+  assert.ok(result, "no result was reported");
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, "rejected");
+  assert.equal(h.execCommands.length, 1, "the execCommand fallback should be tried once");
 });

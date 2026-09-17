@@ -103,3 +103,23 @@ npm dist-tags: latest 0.1.5-rc.1 ✅ | next 0.1.5-rc.2 ✅ | alpha 0.1.6-alpha.1
 **顺带发现（不是本次引入）**：`README(中英)` 与 `CHANGELOG[0.4.0]` 说 `openTarget` 默认 `editorTab`，而代码/清单/单测三处都是 `sidebar`。README 已订正，历史 CHANGELOG 按规范保留，定性待用户 → **G-25** / 勘误台账 **B7**。
 
 **本轮的验证证据**：`npm run check:docs` 在真实仓库为绿；用两个负例夹（证据插队 `02-事实` + 裸相对坏链）实测**都能被拦下并 exit 1**；`vsce ls` 的 A/B 对照（有/无 `--no-dependencies`）是 P4 的判据。
+
+## 8. 真机反馈（2026-09-17 用户实测 v0.5.1）与随之修复的缺陷
+
+用户实测反馈两条，逐条落定：
+
+| 反馈 | 落定结果 |
+|---|---|
+| 右键入口能写进去，但**出现两条相同引用** | **真缺陷，已定位并修复 → v0.5.2**。根因：写入层用**同步 DOM 读**判定成败，而真实 composer（Lexical）**异步提交** DOM——文本已经写进去却回报 `ok:false`，宿主于是把引用复制到剪贴板并提示"请按 Ctrl+V 粘贴"，用户一粘贴就成了两条。修复记录见 [11-修复](11-修复_右键插入报失败导致重复两条引用.md) |
+| 拖拽不生效 | **未定性**：按源码分析，不按 Shift 必然不生效（VS Code 把 webview iframe 置 `pointer-events:none`）；用户是否按过 Shift 未知 → 待补一次复测（`07-待办` T13）。页面侧链路已由探针证明正常（见下） |
+
+**新增的真机探针**（`npm run probe:composer`，`scripts/probe-composer-insert.js`）：起真实 `dsh web` + headless Chromium，**注入真 `bridge-client.js`**，对着真 composer 实测三件事——写入次数、回报内容、页面侧拖拽转发。它填掉了本特性原先最大的验证空洞（"写入面只有假 DOM 单测"）：
+
+| 探针实验 | 修复前 | 修复后 |
+|---|---|---|
+| A 只发合成 `paste` | 同步读不到、400ms 后 1 次 | 同（异步提交是上游性质） |
+| B 只用 `execCommand` | 返回 false、异步、**不稳定（0 或 1 次）** | 同 → 因此只作兜底，不作主路径 |
+| **C 线上路径** | 文本 **1 次**，回报 **`ok:false`** ← 缺陷 | 文本 **1 次**，回报 **`ok:true, reason:"paste"`** ✅ |
+| D 页面侧拖拽（VS Code 形状负载） | — | `dragover`/`drop` 被接管、`dsh-context-drop` 正确转发 ✅ |
+
+**教训已沉淀为规范**：[扩展与 Webview 规范](../../02-Areas/20260914-02-扩展与Webview规范.md) §3.1「往上游富文本编辑器写入：不得用同步 DOM 读判定成败」，并写进该规范的提交前自检清单（改动写入面必须跑 `probe:composer`）。

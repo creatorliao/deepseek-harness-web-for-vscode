@@ -328,7 +328,7 @@
   // A synthetic paste event is the only way in: DSH's composer is a Lexical
   // editor whose draft lives in editor state, so DOM writes get reverted. The
   // frontend handles the paste by reading `clipboardData` and inserting the
-  // text through its own (synchronous, `discrete`) edit path.
+  // text through its own edit path.
   function dispatchPaste(el, text) {
     try {
       var dataTransfer = new DataTransfer();
@@ -343,6 +343,66 @@
     } catch (_e) {
       return false;
     }
+  }
+
+  // Lexical applies an edit to editor STATE and commits the DOM on a later tick,
+  // so "did it land?" cannot be answered by reading the DOM right after the
+  // event. Measured against dsh 0.1.5-rc.2 with scripts/probe-composer-insert.js:
+  // both the paste command and execCommand commit asynchronously (nothing
+  // visible synchronously, one copy ~100ms later).
+  //
+  // The success criterion is the CONTENT, never "the text changed": pasting over
+  // a selection that already holds the same reference replaces it with identical
+  // text, so the DOM string stays the same while the write worked. An earlier
+  // version used "changed" and reported failure on that case — the extension
+  // host then copied the reference to the clipboard and told the user to paste,
+  // which is how one reference became two.
+  var INSERT_POLL_MS = 40;
+  var INSERT_STEP_BUDGET_MS = [600, 400];
+
+  function draftContains(el, needle) {
+    var trimmed = String(needle || "").trim();
+    if (trimmed.length === 0) return false;
+    return String(el.textContent || "").indexOf(trimmed) !== -1;
+  }
+
+  function waitForReference(el, needle, deadline, onDone) {
+    if (draftContains(el, needle)) {
+      onDone(true);
+      return;
+    }
+    if (Date.now() >= deadline) {
+      onDone(false);
+      return;
+    }
+    setTimeout(function () {
+      waitForReference(el, needle, deadline, onDone);
+    }, INSERT_POLL_MS);
+  }
+
+  function runInsertStep(el, text, before, step, done) {
+    if (step === 0) {
+      var pasted = dispatchPaste(el, text);
+      if (!pasted) {
+        // No ClipboardEvent/DataTransfer constructor: skip straight to the command.
+        runInsertStep(el, text, before, 1, done);
+        return;
+      }
+    } else if (step === 1) {
+      try {
+        document.execCommand("insertText", false, text);
+      } catch (_e) {
+        /* command unavailable: the wait below simply times out */
+      }
+    } else {
+      done(false, "rejected");
+      return;
+    }
+    var budget = INSERT_STEP_BUDGET_MS[step] == null ? 0 : INSERT_STEP_BUDGET_MS[step];
+    waitForReference(el, text, Date.now() + budget, function (landed) {
+      if (landed) done(true, step === 0 ? "paste" : "execCommand");
+      else runInsertStep(el, text, before, step + 1, done);
+    });
   }
 
   /**
@@ -367,26 +427,9 @@
         /* focus is best-effort */
       }
     }
-    if (dispatchPaste(el, padded) && String(el.textContent || "") !== before) {
-      done({ ok: true, reason: "paste", text: padded });
-      return;
-    }
-    // Fallback command: Lexical also handles the browser's own insertText path.
-    // Re-check shortly after, because a DOM-only insertion would be reverted by
-    // the next editor commit — reporting success for text that then disappears
-    // would be a lie.
-    try {
-      document.execCommand("insertText", false, padded);
-    } catch (_e) {
-      /* command unavailable */
-    }
-    if (String(el.textContent || "") === before) {
-      done({ ok: false, reason: "rejected", text: padded });
-      return;
-    }
-    setTimeout(function () {
-      done({ ok: String(el.textContent || "") !== before, reason: "execCommand", text: padded });
-    }, 60);
+    runInsertStep(el, padded, before, 0, function (ok, reason) {
+      done({ ok: ok, reason: reason, text: padded });
+    });
   }
 
   if (typeof document !== "undefined" && document.addEventListener) {

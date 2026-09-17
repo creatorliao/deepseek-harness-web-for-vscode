@@ -63,19 +63,22 @@ function walkMarkdown(dir, out = []) {
   return out;
 }
 
-/** R4 — every relative `.md` link must point at a file that exists. */
+/** R4 — every relative link must point at a file that exists. */
 function checkLinks(file) {
   const text = fs.readFileSync(file, "utf8");
   const base = path.dirname(file);
-  // Bare relative links (`01-需求_x.md`) count too — only absolute paths,
-  // anchors and real URLs are out of scope. Placeholder targets in the record
-  // TEMPLATES (`[分析文档](NN-分析_….md)`, `<一句话现象>`) are not links to a
-  // file, so they are skipped rather than reported forever.
-  for (const match of text.matchAll(/\]\(([^)\s]+\.md)\)/g)) {
+  // Bare relative links (`01-需求_x.md`) count too. Anything with a file-ish
+  // last segment is checked, not just `.md`: a link to a script or an image
+  // breaks exactly the same way (it did, once, with one `../` too many).
+  for (const match of text.matchAll(/\]\(([^)\s]+)\)/g)) {
     const target = match[1];
     if (target.includes("://") || target.startsWith("#") || target.startsWith("/")) continue;
+    if (!/\.[a-z0-9]{2,5}(#|$)/i.test(target)) continue; // not a file reference
+    // Placeholder targets in the record TEMPLATES (`[分析文档](NN-分析_….md)`,
+    // `<一句话现象>`) are not links to a file, so they are skipped rather than
+    // reported forever.
     if (/[…<>]/.test(target)) continue;
-    if (!fs.existsSync(path.resolve(base, target))) {
+    if (!fs.existsSync(path.resolve(base, target.split("#")[0]))) {
       problems.push(`${rel(file)}: broken link -> ${target}`);
     }
   }

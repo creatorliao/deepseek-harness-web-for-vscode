@@ -48,7 +48,8 @@ Compatible dsh versions for each dsh4vscode release — any other pairing is ref
 
 | dsh4vscode version | Compatible dsh |
 |---|---|
-| `0.5.1` (current) | `0.1.2-rc.1`, `0.1.5-rc.1`, `0.1.5-rc.2` |
+| `0.5.2` (current) | `0.1.2-rc.1`, `0.1.5-rc.1`, `0.1.5-rc.2` |
+| `0.5.1` | `0.1.2-rc.1`, `0.1.5-rc.1`, `0.1.5-rc.2` |
 | `0.5.0` | `0.1.2-rc.1`, `0.1.5-rc.1`, `0.1.5-rc.2` |
 | `0.4.0` | `0.1.2-rc.1`, `0.1.5-rc.1`, `0.1.5-rc.2` |
 | `0.3.4` | `0.1.2-rc.1`, `0.1.5-rc.1`, `0.1.5-rc.2` |
