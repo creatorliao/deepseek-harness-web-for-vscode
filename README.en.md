@@ -30,7 +30,9 @@ Launch **DeepSeek Harness** and embed its full Web UI inside VS Code (and Antigr
 - **Clipboard works** — copy/paste in the embedded UI goes through a transport bridge (VS Code webviews block clipboard inside iframes; the bridge routes it via `vscode.env.clipboard`).
 - **Drag files from the explorer onto the composer as `@` references** — dropping one file (or a multi-selection, or a folder) writes `@workspace-relative/path`, which is **functionally identical** to picking the file from the `@` completion (the model then reads the file itself).
   - ⚠️ **Hold `Shift` while dragging**: VS Code disables pointer events on every webview iframe for the duration of an in-window drag, and Shift is its documented escape hatch for dropping files into a webview. Without Shift the file is opened in the editor area instead.
-  - Equivalent context-menu entry (**no Shift needed**): select files in the explorer → right-click → **添加到 DSH 输入框（@ 引用）**.
+  - Two handier entries that **need no Shift**:
+    - **Keybinding**: with the cursor in an editor press `Ctrl+Alt+A` (macOS `Cmd+Alt+A`) to turn the current file into an `@` reference; rebindable in Keyboard Shortcuts.
+    - **Context menu**: select files in the explorer (multi-select works) → right-click → **添加到 DSH 输入框（@ 引用）**.
   - ℹ️ The text written is plain `@path`: DSH's `@` completion chip serializes to exactly that string, so the message the model receives is byte-identical — no chip in the UI, same meaning.
 - **Theme follows VS Code** — the embedded UI follows your editor color theme (dark/light), live on switch (`deepseekHarness.themeSync`, default `follow`).
 - **Cross-platform** — macOS, Linux and Windows, verified end-to-end by CI (unit tests + a real `dsh` spawn smoke test on all three).
@@ -48,7 +50,8 @@ Compatible dsh versions for each dsh4vscode release — any other pairing is ref
 
 | dsh4vscode version | Compatible dsh |
 |---|---|
-| `0.5.2` (current) | `0.1.2-rc.1`, `0.1.5-rc.1`, `0.1.5-rc.2` |
+| `0.5.3` (current) | `0.1.2-rc.1`, `0.1.5-rc.1`, `0.1.5-rc.2` |
+| `0.5.2` | `0.1.2-rc.1`, `0.1.5-rc.1`, `0.1.5-rc.2` |
 | `0.5.1` | `0.1.2-rc.1`, `0.1.5-rc.1`, `0.1.5-rc.2` |
 | `0.5.0` | `0.1.2-rc.1`, `0.1.5-rc.1`, `0.1.5-rc.2` |
 | `0.4.0` | `0.1.2-rc.1`, `0.1.5-rc.1`, `0.1.5-rc.2` |

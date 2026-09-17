@@ -7,6 +7,19 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.3] - 2026-09-17
+
+### Added
+
+- **Keybinding entry: `Ctrl+Alt+A` (macOS `Cmd+Alt+A`) adds the current file to the DSH composer** while the cursor is in an editor. It shares the same translation and write path as the context-menu entry; the key has **zero conflicts** with VS Code 1.105.1's default keybindings (measured) and can be rebound in Keyboard Shortcuts.
+  - Why it exists: on a real machine the "drop onto the composer" route is blocked by the platform (VS Code sets `pointer-events: none` on webview iframes for the duration of an in-window drag; only Shift lifts it, and Shift must be held *before* the pointer enters the panel). Rather than fight that, the entry became **one keystroke** — which is also Cursor's primary flow (`Ctrl+L`); dragging is its secondary affordance.
+  - With no file open it shows a Chinese hint pointing at the context-menu entry instead of failing silently.
+  - Explorer **multi-selection** still goes through the context menu: VS Code exposes no documented API for the explorer's selection, so the keybinding can only take the file being edited.
+
+### Notes
+
+- The drag entry is unchanged (the Shift route stays, pending a real-machine retest). The fallback — a **TreeView drop strip** (official `TreeDragAndDropController`; the host receives the dropped URI list directly and is unaffected by the webview blocking) — has been evaluated and recorded, but adding that permanent UI waits on the user's call (topic folder `07-待办` E-C).
+
 ## [0.5.2] - 2026-09-17
 
 ### Fixed

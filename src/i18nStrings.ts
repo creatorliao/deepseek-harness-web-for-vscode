@@ -160,6 +160,9 @@ export const STRINGS = {
   "context.noSurface": {
     zh: "DeepSeek Harness 界面没有打开。请先启动并打开 DSH 界面，再添加引用。",
   },
+  "context.noActiveFile": {
+    zh: "没有可加入的文件：请先打开一个文件再按快捷键，或在资源管理器里选中文件后右键「添加到 DSH 输入框（@ 引用）」。",
+  },
 } as const satisfies Record<string, I18nRow>;
 
 export type I18nKey = keyof typeof STRINGS;

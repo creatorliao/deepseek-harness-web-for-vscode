@@ -47,6 +47,17 @@ export interface CommandTargets {
   addToContext: (uris: readonly vscode.Uri[]) => void;
 }
 
+/**
+ * The file being edited, as a one-element list — the keybinding entry point.
+ *
+ * Only `file:` documents: the reference grammar is a filesystem path, so an
+ * untitled buffer or a diff view has nothing to point at.
+ */
+function activeFileUris(): vscode.Uri[] {
+  const uri = vscode.window.activeTextEditor?.document.uri;
+  return uri && uri.scheme === "file" ? [uri] : [];
+}
+
 export function registerCommands(
   context: vscode.ExtensionContext,
   manager: DshServerManager,
@@ -86,10 +97,18 @@ export function registerCommands(
     vscode.commands.registerCommand(
       "deepseek-harness-for-vscode.addToContext",
       (uri?: vscode.Uri, uris?: vscode.Uri[]) => {
-        // The explorer passes the clicked resource plus the whole selection;
-        // either can be missing depending on how the command was invoked.
-        const selected = uris && uris.length > 0 ? uris : uri ? [uri] : [];
-        if (selected.length === 0) return;
+        // Two entries share this command:
+        //  - the explorer context menu passes the clicked resource PLUS the
+        //    whole selection;
+        //  - the keybinding (`ctrl+alt+a` while a text editor has focus) passes
+        //    nothing, so it falls back to the file being edited. The explorer's
+        //    own selection is not exposed to extensions by any documented API,
+        //    which is exactly why that case stays on the context menu.
+        const selected = uris && uris.length > 0 ? uris : uri ? [uri] : activeFileUris();
+        if (selected.length === 0) {
+          void vscode.window.showWarningMessage(t("context.noActiveFile"));
+          return;
+        }
         targets.addToContext(selected);
       }
     )

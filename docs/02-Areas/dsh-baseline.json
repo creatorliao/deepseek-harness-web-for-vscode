@@ -1,6 +1,6 @@
 {
   "$schema-comment": "本项目适配的上游 @deepseek-ai/dsh 版本基线。这是版本相关事实的唯一机器可读源；scripts/check-dsh-latest.js 读取它。人工维护的说明见 docs/02-Areas/20260914-06-上游兼容规范_跟随最新官方DSH.md。",
-  "extensionVersion": "0.5.2",
+  "extensionVersion": "0.5.3",
   "minDshVersion": "0.1.2-rc.1",
   "minDshVersionNote": "硬门：src/serverManager.ts 的 MIN_DSH_VERSION；低于此版本直接拒绝启动。改动必须同步 README.md / README.en.md / CHANGELOG.md。",
   "verified": [
