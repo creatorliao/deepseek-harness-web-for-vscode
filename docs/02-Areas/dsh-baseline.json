@@ -1,6 +1,6 @@
 {
   "$schema-comment": "本项目适配的上游 @deepseek-ai/dsh 版本基线。这是版本相关事实的唯一机器可读源；scripts/check-dsh-latest.js 读取它。人工维护的说明见 docs/02-Areas/20260914-06-上游兼容规范_跟随最新官方DSH.md。",
-  "extensionVersion": "0.5.3",
+  "extensionVersion": "0.6.0",
   "minDshVersion": "0.1.2-rc.1",
   "minDshVersionNote": "硬门：src/serverManager.ts 的 MIN_DSH_VERSION；低于此版本直接拒绝启动。改动必须同步 README.md / README.en.md / CHANGELOG.md。",
   "verified": [
@@ -21,6 +21,12 @@
       "verifiedOn": "2026-09-10",
       "depth": "VS Code + 协议探针",
       "evidence": "commit 7918816"
+    },
+    {
+      "version": "0.1.6-alpha.2",
+      "verifiedOn": "2026-09-18",
+      "depth": "隔离预演实测（四破坏面 A–D + scripts/smoke.js + 脆弱点 token 核对；**未经真机 F5**）",
+      "evidence": "docs/01-Projects/R20260918-04-上游0.1.6-alpha差距与升级/03-分析_0.1.5-rc.2到0.1.6-alpha.2差距.md"
     }
   ],
   "knownBreakingChanges": [
@@ -109,16 +115,24 @@
       "verifiedOn": "0.1.5-rc.2（dsh-client-ui-conversation / dsh-client-ui-attachment / dsh-client-ui-sidebar-documentpreview / dsh-client-file-upload 的 lib/client.js）",
       "code": "src/documentAssembly.ts 的 buildCsp（img-src 的 blob:）",
       "breaksHow": "若官方改用别的 URL 方案（或改回 data:），我们的 CSP 源列表可能又缺一项 → 图片/预览再次被拒载；反之若官方不再用 blob:，这条放行就可收回"
+    },
+    {
+      "id": "settings-rpc-surface",
+      "what": "设置写入面：`POST /api/settings/update` + 请求体 `{type:\"client-request\", method:\"settings/update\", payload:{args:{ns,patch}}}` + **authority 绑定会话 Cookie**；旧的 `POST /api/settings.update`（点号方法、平铺 payload、无 Cookie）自 0.1.2-rc.1 起 **401**（实测 2026-09-18：0.1.5-rc.2 与 0.1.6-alpha.2 均如此；带 Cookie 则 200 ok 并落盘 `$DSH_HOME/settings.yaml`）",
+      "verifiedOn": "0.1.5-rc.2 与 0.1.6-alpha.2（隔离 DSH_HOME 实测，两版本形态一致）",
+      "code": "src/serverManager.ts 的 updateSettings()（走 api() 的信封与 Cookie）；消费点 src/themeSync.ts",
+      "breaksHow": "若上游改掉 settings/update 的方法名或参数形状（`ns`/`patch`，`expectedRevision` 可选）→ 主题同步再次**静默失效**：写入 401/404 但不抛错，页面内 matchMedia shim 让主题看起来仍然正确（这正是 0.3.4–0.5.3 一直在发生的形态）。回归断言在 test/serverManager.test.js 的 updateSettings 用例",
+      "note": "见 docs/01-Projects/R20260820-01-上游DSH版本适配/13-修复_主题同步静默失效_dsh0.1.2起RPC未跟上.md"
     }
   ],
   "audit": {
-    "lastCheckedOn": "2026-09-15",
+    "lastCheckedOn": "2026-09-18",
     "lastCheckedTags": {
-      "latest": "0.1.5-rc.1",
+      "latest": "0.1.5-rc.2",
       "next": "0.1.5-rc.2",
-      "alpha": "0.1.5-alpha.2"
+      "alpha": "0.1.6-alpha.2"
     },
-    "lastCheckedResult": "已覆盖：latest 与 next 均在 verified 列表中；alpha 为上游实验通道，不纳入基线。",
-    "localInstall": "2026-09-15：本机全局 CLI 由 0.1.5-rc.1 升到 0.1.5-rc.2（next 通道最新，按发布时间也是最新）。升级动作在活跃会话上执行，导致该会话子进程工具链失效（见 docs/01-Projects/R20260820-01-上游DSH版本适配/11-事件_热升级内核导致会话工具链失效.md）。**rc.2 的四破坏面 A–D 复核、scripts/smoke.js 与真机面板验证仍待做**——复核通过前不要提高 verified[] 里该版本的核实深度。"
+    "lastCheckedResult": "已覆盖：latest 与 next（都是 0.1.5-rc.2）在 verified 列表中。alpha=0.1.6-alpha.2 经 2026-09-18 隔离预演复核通过后**已并入 verified**（用户决策：跟进 alpha，扩展版本随之升到 0.6.0）。⚠️ `scripts/check-dsh-latest.js` 的 TRACKED_CHANNELS 仍只有 latest/next，因此 alpha 通道再发新版时它**不会提示**——要跟 alpha 必须手动 `npm view @deepseek-ai/dsh dist-tags`。",
+    "localInstall": "本机全局 CLI 仍为 0.1.5-rc.2。**0.1.6-alpha.2 只做了隔离预演（临时 prefix，`DSH_BIN` 指向隔离安装），未做全局安装**——全局安装等于换掉正在跑的那棵树，必须在停掉全部 dsh 会话之后执行（见 docs/01-Projects/R20260820-01-上游DSH版本适配/11-事件_热升级内核导致会话工具链失效.md 与 docs/02-Areas/20260915-01-内核升级最佳实践.md）。本次预演覆盖：0.1.6-alpha.2 的四破坏面 A–D + `scripts/smoke.js` + 脆弱点 token；0.1.5-rc.2 侧本次补跑了设置 RPC 探针（形态与 alpha.2 一致）。**真机 F5 面板验收（渲染/插件加载/对话/剪贴板/主题跟随）仍待做。**"
   }
 }
