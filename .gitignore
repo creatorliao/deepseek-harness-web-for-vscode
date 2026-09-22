@@ -19,3 +19,6 @@ spike/
 # Logs / editor
 *.log
 .vscode/.cache/
+
+# Obsidian vault UI state (this repo is opened as a vault for docs/ reading)
+.obsidian/
