@@ -12,6 +12,7 @@ import { DshChatView } from "./chatView.js";
 import { SessionPanelManager } from "./sessionPanels.js";
 import { columnForRightSide, resolveOpenTarget, type OpenTarget } from "./openTarget.js";
 import { DshLauncherView } from "./launcherView.js";
+import { ContextDropView } from "./contextDropView.js";
 import { registerThemeSync } from "./themeSync.js";
 import { createDshStatusBar } from "./statusBar.js";
 import { deliverUrisToComposer } from "./dshUi.js";
@@ -28,12 +29,16 @@ export function activate(context: vscode.ExtensionContext): void {
   // Sleep/wake diagnostics: a fresh activate() after laptop sleep means the
   // extension host restarted (the manager instance below is brand-new and
   // starts "stopped" even though the old dsh child may still be alive).
-  console.log(`[dsh] activate: wasRunning=${context.workspaceState.get<boolean>(WAS_RUNNING_KEY)} workspace=${vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "(none)"}`);
+  // The EXTENSION version is logged too: after installing a new vsix the host
+  // keeps running the OLD code until the window is reloaded, and "the command
+  // exists in the palette" does not prove which build is loaded — the version in
+  // this line does (Output → Extension Host).
+  console.log(`[dsh] activate: v${context.extension.packageJSON.version} wasRunning=${context.workspaceState.get<boolean>(WAS_RUNNING_KEY)} workspace=${vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "(none)"}`);
   manager = new DshServerManager();
   manager.on("log", (msg: string) => console.log("[dsh]", msg));
   manager.on("stderr", (msg: string) => console.log("[dsh]", msg));
 
-  const theme = registerThemeSync(context, () => manager?.serverUrl);
+  const theme = registerThemeSync(context, manager);
   // Persist the open-panel sessionId list (02 T6): survives window reload so
   // the auto-restart path can restore every panel bound to its session.
   const persistPanels = (ids: string[]): void => {
@@ -171,21 +176,29 @@ export function activate(context: vscode.ExtensionContext): void {
     })
   );
 
+  // ONE implementation of "send these URIs to the DSH composer", shared by every
+  // entry: the explorer context menu, the editor title button, the editor
+  // context menu, the keybinding, and the drop strip. The visible side-bar view
+  // wins, otherwise the most recent editor-tab panel.
+  const addUrisToContext = (uris: readonly vscode.Uri[]): void => {
+    const target = chatView.isVisible ? chatView : panels.visiblePanel();
+    if (!target) {
+      void vscode.window.showWarningMessage(t("context.noSurface"));
+      return;
+    }
+    void deliverUrisToComposer(target, uris, workspaceRoot());
+  };
+
   registerCommands(context, manager, {
     openDefault: () => openUi(undefined, undefined),
     openEditorTab: () => openEditorTab(),
     openChatView: () => void openSidePanel(),
-    // Explorer context menu -> composer (R20260917-01 fallback): the visible
-    // side-bar view wins, otherwise the most recent editor-tab panel.
-    addToContext: (uris) => {
-      const target = chatView.isVisible ? chatView : panels.visiblePanel();
-      if (!target) {
-        void vscode.window.showWarningMessage(t("context.noSurface"));
-        return;
-      }
-      void deliverUrisToComposer(target, uris, workspaceRoot());
-    },
+    addToContext: addUrisToContext,
   });
+  // Drop strip (R20260917-01): a NATIVE tree view inside the built-in Explorer
+  // container, so dragging files out of the tree reaches the extension host
+  // without the webview drag blocking (see contextDropView.ts).
+  context.subscriptions.push(new ContextDropView(addUrisToContext).register());
   createDshStatusBar(context, manager);
 
   // Session handlers (02 T5/T6): new session opens a fresh panel; opening a

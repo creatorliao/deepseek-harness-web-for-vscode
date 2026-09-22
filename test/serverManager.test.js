@@ -607,6 +607,33 @@ test("createSession sends workspace-bound session/create (0.1.2 wire)", async ()
   }
 });
 
+test("updateSettings posts settings/update with the session cookie (dead dot method regression)", async () => {
+  // Measured 2026-09-18 on dsh 0.1.5-rc.2 and 0.1.6-alpha.2: the pre-0.1.2
+  // `settings.update` dot method answers 401 (no cookie) / is gone, so theme
+  // sync silently never landed — the in-page matchMedia shim kept the theme
+  // looking right and hid the failure. The write must ride api()'s
+  // namespace/method envelope plus the browser-session cookie.
+  const manager = apiManager();
+  manager.authCookie = "dsh-auth-test=v1.sig";
+  let sent;
+  let cookie;
+  const realFetch = global.fetch;
+  global.fetch = async (_url, opts) => {
+    sent = JSON.parse(opts.body);
+    cookie = opts.headers.cookie;
+    return { json: async () => ({ result: { ok: true, value: { ns: "ui-theme" } } }) };
+  };
+  try {
+    await manager.updateSettings("ui-theme", { preference: "dark" });
+    assert.equal(sent.type, "client-request");
+    assert.equal(sent.method, "settings/update");
+    assert.deepEqual(sent.payload, { args: { ns: "ui-theme", patch: { preference: "dark" } } });
+    assert.equal(cookie, "dsh-auth-test=v1.sig", "the session cookie must ride the write");
+  } finally {
+    global.fetch = realFetch;
+  }
+});
+
 test("ensureWorkspaceSession reuses a blank bound session instead of creating", async () => {
   const manager = apiManager();
   manager.workspaceSnapshot = async () =>

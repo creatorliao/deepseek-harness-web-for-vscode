@@ -163,6 +163,16 @@ export const STRINGS = {
   "context.noActiveFile": {
     zh: "没有可加入的文件：请先打开一个文件再按快捷键，或在资源管理器里选中文件后右键「添加到 DSH 输入框（@ 引用）」。",
   },
+  // context drop strip (native TreeView inside the built-in Explorer container)
+  "contextDrop.label": {
+    zh: "把文件拖到这里 → 加入 @ 引用",
+  },
+  "contextDrop.tooltip": {
+    zh: "从资源管理器把文件（可多选）拖到这一行，就会作为 `@` 引用写进 DSH 输入框。\n\n点击这一行 = 把**当前编辑的文件**加入（等同快捷键 `Ctrl+Alt+A`）。\n\n为什么不直接拖进 DSH 面板：VS Code 在窗口内拖拽期间会关掉 webview 的指针事件，只有按住 `Shift` 才放行；这一行是原生视图，不受该限制。",
+  },
+  "contextDrop.dropped": {
+    zh: "已加入 {count} 个",
+  },
 } as const satisfies Record<string, I18nRow>;
 
 export type I18nKey = keyof typeof STRINGS;

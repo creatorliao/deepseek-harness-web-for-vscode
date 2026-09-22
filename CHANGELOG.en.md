@@ -7,6 +7,46 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-09-21
+
+### Fixed
+
+- **Theme sync had been silently failing all along** (since dsh `0.1.2-rc.1`; affects v0.3.4 – v0.5.3): the extension wrote the theme preference through dsh's **pre-0.1.2** dot-method RPC (`POST /api/settings.update`) with **no session cookie** — it answers **401** on both `0.1.5-rc.2` and `0.1.6-alpha.2`, so that write **never landed**.
+  - Why it hid for five releases: the panel's theme **always looked right** — an in-page `matchMedia` shim makes DSH's "system" resolution follow VS Code regardless of whether the extension wrote anything, and the failed write was swallowed by a `catch` that only logged. **A textbook "looks successful, never happened" silent failure.**
+  - Fix: the write now goes through the extension's existing RPC entry point (`serverManager.updateSettings()` → `settings/update` + session cookie). Afterwards **no call site in the project fetches `/api` directly any more**.
+  - Measured (isolated `DSH_HOME`, same shape on both versions): `POST /api/settings.update` (legacy, no cookie) → **401**; `POST /api/settings/update` + cookie → **200 ok**, persisting `ui-theme: preference: dark` to `$DSH_HOME/settings.yaml`.
+  - Full record: [13-修复_主题同步静默失效](docs/01-Projects/R20260820-01-上游DSH版本适配/13-修复_主题同步静默失效_dsh0.1.2起RPC未跟上.md) (with a new regression test).
+- **The `themeSync: off` semantics issue was left untouched**: `off` only stops the write above, not the `matchMedia` shim, so the embedded UI still follows VS Code's theme. Cause and remediation: [R20260918-01 §3.1](docs/01-Projects/R20260918-01-插件配置与数据外发调查/02-分析_配置项必要性与改进建议.md).
+
+### Added (entries & drop strip)
+
+- **Three new mouse-only entries, plus a native TreeView that makes real dragging work for the first time** (per-item triage of the 2026-09-17 on-device feedback: [12-分析_入口可达性与拖拽可达性](docs/01-Projects/R20260917-01-目录树拖拽到Composer/12-分析_入口可达性与拖拽可达性.md)):
+  - **Editor title-bar ⊕ button** (`editor/title` menu; the command gained `icon: "$(add)"`): appears in the top-right of an open file; one click adds **the current file** to the DSH composer.
+  - **Editor context menu** (`editor/context`, gated on `resourceScheme == file`): the same command and behaviour as the explorer context menu.
+  - **Drop strip in the explorer** (new `src/contextDropView.ts`): a single-row native TreeView contributed into the **built-in Explorer container** (right under the file tree), with `dropMimeTypes: ["text/uri-list"]`. **Dragging finally works** — a tree view is not an iframe, so the workbench hands the drop straight to the extension host: no `Shift`, no cross-origin boundary, none of the webview drag blocking; multi-select works; clicking the row adds the file being edited; after a drop the row shows the count on its right.
+  - Why the carrier had to change: the editor tab and the secondary sidebar — **both webview shapes — are covered by the same block** (`WebviewWindowDragMonitor` is instantiated in three places in the workbench bundle; measured on VS Code 1.105.1 and Cursor 3.20.21). The only release signal is a drag event carrying `shiftKey`, and that signal itself requires the iframe to have received the drag first — **a deadlock**, with no setting to turn it off.
+  - All five entries (the three above plus the `Ctrl+Alt+A` keybinding and the explorer context menu) **share one implementation** (`addUrisToContext()` → `deliverUrisToComposer()` in `extension.ts`), so a fix such as "written twice" applies to every entry at once.
+  - New pure function `fileUrisFromUriList()` (`src/referenceDrop.ts`, unit-tested) parses the `text/uri-list` payload.
+- **`activate()` now logs the extension version** (`[dsh] activate: v0.6.0 …`; see Output → Extension Host): after installing a new vsix without "Reload Window" the host keeps running the **old code**, and "the command is in the palette" does not prove the version — this line does.
+
+### Added (upstream alignment)
+
+- **Adaptation baseline advanced to dsh `0.1.6-alpha.2`** (upstream's current newest release, on the `alpha` experimental channel). Verified on 2026-09-18 against an **isolated install**, surface by surface: **all four breakage surfaces A–D unchanged, no code change needed**; `node scripts/smoke.js` passes (`smoke OK`, exit=0); all 12 fragile-point tokens still present; dependency tree 520 → 488 packages.
+  - Good news: startup is ~**3× faster** (10.3–11.3 s → 3.5–3.9 s).
+  - Cost: `node_modules` grows from 222.9 MiB to **560.6 MiB** (+325.1 MiB, LibreOffice components for Office preview).
+- Compatibility tables (`README.md` / `README.en.md`) and [`docs/02-Areas/dsh-baseline.json`](docs/02-Areas/dsh-baseline.json) updated together; one new fragile point registered — **`settings-rpc-surface`** — locking the fix above into the "always re-check when swapping the kernel" list.
+
+### Docs
+
+- **New "Upgrading dsh to `0.1.6-alpha`" section in both READMEs**: a table of the upstream changes that **require action on your side** — the old official API root URL must change, `V4 Flash` left the default model list, the built-in E2B backend was removed, PTC packages / the workflow executor were renamed, `Ralph` is off by default, Team mode moved to `spawn_teammate`, **the Web terminal now runs with system-user privileges outside the Agent sandbox**, hot reload no longer rolls back, and more.
+- Upstream's bilingual `0.1.5-rc.2 → 0.1.6-alpha.2` release notes are archived **verbatim** in [`docs/03-Resources/20260918-01`](docs/03-Resources/20260918-01-官方DSH发布说明_0.1.5-rc.2到0.1.6-alpha.2.md); the user-facing gap analysis and the reusable upgrade SOP live in [`docs/01-Projects/R20260918-04-上游0.1.6-alpha差距与升级/`](docs/01-Projects/R20260918-04-上游0.1.6-alpha差距与升级/00-README.md).
+- New [12-分析_入口可达性与拖拽可达性](docs/01-Projects/R20260917-01-目录树拖拽到Composer/12-分析_入口可达性与拖拽可达性.md): triages each of the six 2026-09-17 on-device complaints as a real defect / platform limit / user misunderstanding / new requirement, and records the bundle-level root cause of the webview drag block (this is also where 0.5.3's "should the TreeView drop strip be added? — awaiting the user's decision" landed).
+
+### Notes
+
+- **No global kernel install was performed this round.** `npm i -g` replaces **the tree that is currently running** — this machine has a recorded incident where hot-upgrading the kernel on a live session immediately broke that session's subprocess toolchain, so this round only ran an isolated preview under a temp prefix. The global CLI here is still `0.1.5-rc.2`; to actually swap the kernel, stop every dsh session first and follow [内核升级最佳实践](docs/02-Areas/20260915-01-内核升级最佳实践.md).
+- **The on-device F5 panel check (render / plugin loading / conversation / clipboard / theme following) was not done** — it cannot be automated on this machine, and it is the one open item for this release.
+
 ## [0.5.3] - 2026-09-17
 
 ### Added

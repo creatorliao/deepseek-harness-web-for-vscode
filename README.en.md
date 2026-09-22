@@ -50,7 +50,8 @@ Compatible dsh versions for each dsh4vscode release — any other pairing is ref
 
 | dsh4vscode version | Compatible dsh |
 |---|---|
-| `0.5.3` (current) | `0.1.2-rc.1`, `0.1.5-rc.1`, `0.1.5-rc.2` |
+| `0.6.0` (current) | `0.1.2-rc.1`, `0.1.5-rc.1`, `0.1.5-rc.2`, `0.1.6-alpha.2` |
+| `0.5.3` | `0.1.2-rc.1`, `0.1.5-rc.1`, `0.1.5-rc.2` |
 | `0.5.2` | `0.1.2-rc.1`, `0.1.5-rc.1`, `0.1.5-rc.2` |
 | `0.5.1` | `0.1.2-rc.1`, `0.1.5-rc.1`, `0.1.5-rc.2` |
 | `0.5.0` | `0.1.2-rc.1`, `0.1.5-rc.1`, `0.1.5-rc.2` |
@@ -60,6 +61,24 @@ Compatible dsh versions for each dsh4vscode release — any other pairing is ref
 
 - The versions above are the tested pairings. dsh `0.1.2-rc.1` reworked its Web surface (browser-session authentication, Typert RPC, new dist layout), which extension `≤ 0.3.3` cannot use; extension `0.3.4` in turn requires dsh `≥ 0.1.2-rc.1` (older builds are refused with an upgrade hint), so an old dsh must pair with `0.3.3`.
 - No hard cap on newer dsh versions, but dsh moves fast — give the embedded panel one regression check after upgrading dsh.
+- `0.1.6-alpha.*` lives on upstream's **`alpha` experimental channel** (`check:dsh` only tracks `latest`/`next`). This extension was measured against `0.1.6-alpha.2` with all four breakage surfaces unchanged and no code change needed, but upstream makes no backward-compatibility promise for that channel.
+
+### Upgrading dsh to `0.1.6-alpha`
+
+Between `0.1.5-rc.2` and `0.1.6-alpha.2` upstream shipped several changes that **require action on your side** (verbatim release notes: [`docs/03-Resources/20260918-01`](docs/03-Resources/20260918-01-官方DSH发布说明_0.1.5-rc.2到0.1.6-alpha.2.md), Chinese):
+
+| Change | What you need to do |
+|---|---|
+| DeepSeek now defaults to the Messages protocol; **custom API base URLs** are unchanged | If you hand-configured the **old official root URL**, remove it or switch to `https://api.deepseek.com/anthropic` |
+| **V4 Flash and V4 Flash Vision Exp removed** from the default model list | Add them back yourself if you depend on them |
+| The built-in **E2B execution backend was removed** | Custom configs that used it must be updated |
+| PTC packages/services renamed to the `ptc-runtime` family; the workflow executor is now `workflow-ptc` | Custom plugins and configs must follow the rename |
+| **Ralph is no longer enabled by default** | Enable it manually when needed |
+| Experimental Team mode now uses `spawn_teammate` (`subagent`/`subagent_fork` are off) | Update call sites if you use Team mode |
+| **The Web user terminal runs with system-user privileges, outside the Agent sandbox** | A security-semantics change: know about it before relying on that terminal |
+| Hot config reload **no longer rolls back transactions**; request-image cache moved to `DSH_HOME/cache/attachments/request-images`; Node PTC runs in a separate process (`process.env` is empty) | Expect these three behaviours to differ from older builds when troubleshooting |
+
+> Disk note: that version's `node_modules` grows from 222.9 MiB to **560.6 MiB** (+325.1 MiB, LibreOffice components for Office preview), while startup gets ~3× faster (10.3–11.3 s → 3.5–3.9 s). Measured 2026-09-18.
 
 ## Install
 

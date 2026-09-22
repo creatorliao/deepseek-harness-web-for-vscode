@@ -7,6 +7,46 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)，
 版本号遵循[语义化版本](https://semver.org/spec/v2.0.0.html)。
 
+## [0.6.0] - 2026-09-21
+
+### 修复
+
+- **主题同步一直是静默失效的**（自 dsh `0.1.2-rc.1` 起，影响 v0.3.4 – v0.5.3）：扩展往 DSH 写主题偏好用的是 dsh 0.1.2 **之前**的点号 RPC（`POST /api/settings.update`）且**不带会话 Cookie**——在 `0.1.5-rc.2` 与 `0.1.6-alpha.2` 上都返回 **401**，这条写入**从未落盘**。
+  - 为什么 5 个版本都没发现：面板里的主题**看起来一直是对的**——页面内注入了 `matchMedia` shim，让 DSH 前端的 "system" 解析跟随 VS Code，与扩展写没写设置无关；而写入失败被 `catch` 吞掉，只留一行扩展宿主日志。**这是"看起来成功、实际没发生"的静默失效**。
+  - 修复：写入改走扩展既有的 RPC 入口（`serverManager.updateSettings()` → `settings/update` + 会话 Cookie）。修复后全项目**再无裸 `fetch` 打 `/api` 的调用点**。
+  - 实测（隔离 `DSH_HOME`，两版本形态一致）：`POST /api/settings.update`（旧，无 Cookie）→ **401**；`POST /api/settings/update` + Cookie → **200 ok**，且 `$DSH_HOME/settings.yaml` 落盘 `ui-theme: preference: dark`。
+  - 完整记录：[13-修复_主题同步静默失效](docs/01-Projects/R20260820-01-上游DSH版本适配/13-修复_主题同步静默失效_dsh0.1.2起RPC未跟上.md)（含新增回归单测）。
+- **`themeSync: off` 的语义问题本次未动**：`off` 只停掉了上面那条写入，关不掉 `matchMedia` shim，内嵌 UI 仍会跟随 VS Code 主题。原因与整改建议见 [R20260918-01 §3.1](docs/01-Projects/R20260918-01-插件配置与数据外发调查/02-分析_配置项必要性与改进建议.md)。
+
+### 新增（入口与投放条）
+
+- **新增三个不依赖快捷键的鼠标入口，并用原生 TreeView 让"真拖拽"第一次可用**（用户 2026-09-17 真机反馈的逐条定性见 [12-分析_入口可达性与拖拽可达性](docs/01-Projects/R20260917-01-目录树拖拽到Composer/12-分析_入口可达性与拖拽可达性.md)）：
+  - **编辑器标题栏 ⊕ 按钮**（`editor/title` 菜单；命令加 `icon: "$(add)"`）：打开文件时出现在右上角，点一下把**当前文件**加入 DSH 输入框。
+  - **编辑器右键菜单**（`editor/context`，限 `resourceScheme == file`）：与资源管理器右键同一命令、同一行为。
+  - **资源管理器里的投放条**（新增 `src/contextDropView.ts`）：一行原生 TreeView，贡献进**内置 Explorer 容器**（就在文件树正下方），`dropMimeTypes: ["text/uri-list"]`。**拖拽终于生效**——TreeView 不是 iframe，workbench 把 drop 直接交给扩展宿主：不需要按住 `Shift`、不跨源、不受 webview 拖拽屏蔽影响；多选可用；点击该行 = 把当前编辑的文件加入；投放后该行右侧显示"已加入 N 个"。
+  - 为什么必须换承载：编辑器标签页与次级侧边栏——**两种 webview 形态被同一个屏蔽覆盖**（`WebviewWindowDragMonitor` 在 workbench bundle 里被创建三处；VS Code 1.105.1 与 Cursor 3.20.21 实测）。唯一放行信号是"带 `shiftKey` 的 drag 事件"，而该信号本身又必须靠 iframe 先收到拖拽才能回传——**死循环**，且没有相关设置项。
+  - 五个入口（上述三个 + `Ctrl+Alt+A` 快捷键 + 资源管理器右键）**共用同一实现**（`extension.ts` 的 `addUrisToContext()` → `deliverUrisToComposer()`），因此"修一次重复写入"这类问题对所有入口同时生效。
+  - 新增纯函数 `fileUrisFromUriList()`（`src/referenceDrop.ts`，含单测）解析 `text/uri-list` 负载。
+- **`activate()` 现在打印扩展版本**（`[dsh] activate: v0.6.0 …`，见 输出 → Extension Host）：装完新 vsix 若没有「重新加载窗口」，扩展宿主仍在跑**旧代码**，而"命令面板里能看到这个命令"证明不了版本——这一行能。
+
+### 新增（上游对齐）
+
+- **适配基线推进到 dsh `0.1.6-alpha.2`**（官方当前最新发布，属 `alpha` 实验通道）。2026-09-18 在**隔离安装**上逐面复核：**四破坏面 A–D 形态全同、无需改代码**；`node scripts/smoke.js` 通过（`smoke OK`，exit=0）；baseline 登记的 12 个脆弱点 token 全部仍在；依赖树 520 → 488 包。
+  - 顺带好消息：该版本启动快约 **3 倍**（10.3–11.3 s → 3.5–3.9 s）。
+  - 代价：`node_modules` 由 222.9 MiB 涨到 **560.6 MiB**（+325.1 MiB，来自 Office 预览的 LibreOffice 组件）。
+- 兼容矩阵（`README.md` / `README.en.md`）与 [`docs/02-Areas/dsh-baseline.json`](docs/02-Areas/dsh-baseline.json) 同步更新；新增登记一个脆弱点 **`settings-rpc-surface`**，把上面那条修复锁进"下次换内核必查"的清单。
+
+### 文档
+
+- **README（中英）新增「升级 dsh 到 `0.1.6-alpha` 的须知」**：把官方两版发布说明里**需要用户动手**的变更摊成一张表——旧官方 API 根地址要改、`V4 Flash` 从默认模型列表消失、内置 E2B 后端被移除、PTC 包名/工作流执行器改名、`Ralph` 默认关闭、Team 模式改 `spawn_teammate`、**Web 终端改为系统用户权限、不受 Agent 沙箱限制**、热更新取消事务回滚等。
+- 官方 `0.1.5-rc.2 → 0.1.6-alpha.2` 的双语发布说明**逐字留档**在 [`docs/03-Resources/20260918-01`](docs/03-Resources/20260918-01-官方DSH发布说明_0.1.5-rc.2到0.1.6-alpha.2.md)；用户视角差距与升级价值、可复用升级 SOP 在 [`docs/01-Projects/R20260918-04-上游0.1.6-alpha差距与升级/`](docs/01-Projects/R20260918-04-上游0.1.6-alpha差距与升级/00-README.md)。
+- 新增 [12-分析_入口可达性与拖拽可达性](docs/01-Projects/R20260917-01-目录树拖拽到Composer/12-分析_入口可达性与拖拽可达性.md)：把 2026-09-17 真机反馈的 6 条逐条定性为「真缺陷 / 平台限制 / 使用误解 / 新需求」，并记录 webview 拖拽屏蔽的 bundle 级根因（这同时是 0.5.3 里"TreeView 投放条是否新增待用户决定"的落地）。
+
+### 说明
+
+- **本轮未做全局内核安装**。`npm i -g` 等于换掉**正在运行的那棵树**——本机有过"在活跃会话上热升级导致该会话子进程工具链立刻失效"的事故记录，因此本轮只在临时 prefix 做隔离预演。本机全局 CLI 仍是 `0.1.5-rc.2`；要真正换内核，请在**停掉全部 dsh 会话**之后按 [内核升级最佳实践](docs/02-Areas/20260915-01-内核升级最佳实践.md) 执行。
+- **真机 F5 面板验收（渲染 / 插件加载 / 对话 / 剪贴板 / 主题跟随）未做**——本机无法自动化，属本版本唯一未闭环项。
+
 ## [0.5.3] - 2026-09-17
 
 ### 新增

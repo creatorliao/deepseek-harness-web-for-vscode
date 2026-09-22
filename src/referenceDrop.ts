@@ -164,6 +164,26 @@ function splitUriList(raw: string): string[] {
     .filter((line) => line.length > 0 && !line.startsWith("#"));
 }
 
+/**
+ * The `file:` URIs in one `text/uri-list` payload, in order.
+ *
+ * This is the payload VS Code hands a `TreeDragAndDropController` when the user
+ * drags resources out of the explorer (`@types/vscode`: "Use `text/uri-list` for
+ * resources dropped from the explorer or other tree views in the workbench"), so
+ * it is the one place a *native* drop enters this pipeline — no webview, and
+ * therefore none of the iframe drag blocking.
+ */
+export function fileUrisFromUriList(raw: string): string[] {
+  const out: string[] = [];
+  for (const line of splitUriList(raw)) {
+    const withoutFragment = line.split("#")[0];
+    if (/^file:/i.test(withoutFragment) && fileUriToPath(withoutFragment) !== null) {
+      out.push(withoutFragment);
+    }
+  }
+  return out;
+}
+
 function candidatesFromUriList(raw: string, fileOnly: boolean): DropCandidate[] {
   const out: DropCandidate[] = [];
   for (const line of splitUriList(raw)) {

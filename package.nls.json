@@ -5,6 +5,7 @@
   "command.openChatView.title": "在右侧面板打开",
   "command.openPanel.title": "在编辑器打开",
   "command.addToContext.title": "添加到 DSH 输入框（@ 引用）",
+  "view.contextDrop.name": "DSH 上下文（拖文件到此）",
   "setting.themeSync.description": "将 VS Code 的颜色主题同步到内嵌的 DSH 界面。",
   "setting.dshPath.description": "可选。`dsh` 可执行文件的完整路径。**留空即自动探测**（npm 全局、`$DSH_BIN`、Homebrew、nvm、npx 缓存）——这是默认且通常够用的方式；仅当自动探测选错了 dsh、或探测失败时才需要手工指定。",
   "setting.openTarget.description": "自动打开（启动、状态栏、点会话）时 DSH 界面开在哪里：`sidebar` = **右侧面板**（默认，像 Cursor 一样，不会遮住编辑器里的文档）；`editorTab` = 右侧编辑器组里的标签页（宽，但会占掉编辑器区）。启动器面板里的两个按钮可以随时显式指定，不受此项影响。"

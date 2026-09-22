@@ -145,7 +145,13 @@ async function fetchDistTags() {
     }
     for (const channel of Object.keys(tags)) {
       if (!TRACKED_CHANNELS.includes(channel)) {
-        console.log(`    ${channel.padEnd(6)} ${String(tags[channel]).padEnd(14)} （不纳入基线）`);
+        // Untracked channels are not a release gate, but a version that IS in
+        // verified[] must not be reported as if it were outside the baseline
+        // (0.1.6-alpha.2 was deliberately adopted on 2026-09-18).
+        const inBaseline = coveredBy(tags[channel], verified);
+        console.log(
+          `    ${channel.padEnd(6)} ${String(tags[channel]).padEnd(14)} （不跟踪该通道；${inBaseline ? "已在 verified 内" : "不在 verified 内"}）`
+        );
       }
     }
 

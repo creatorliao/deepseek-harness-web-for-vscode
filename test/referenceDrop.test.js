@@ -11,6 +11,7 @@ import {
   MAX_DROP_REFERENCES,
   candidatesFromPayload,
   entriesFromCandidates,
+  fileUrisFromUriList,
   fileUriToPath,
   referencesFromEntries,
   toReference,
@@ -20,6 +21,21 @@ import {
 const ROOT = process.platform === "win32" ? "D:\\code\\proj" : "/code/proj";
 const file = (p) => ({ path: p, kind: "file" });
 const folder = (p) => ({ path: p, kind: "folder" });
+
+test("fileUrisFromUriList: the payload a native tree drop hands the extension", () => {
+  // `TreeDragAndDropController` receives `text/uri-list` — `toString()`ed Uris,
+  // \r\n separated, `#` comments allowed. This is the one drop path that never
+  // touches a webview, so it must be parsed exactly.
+  assert.deepEqual(
+    fileUrisFromUriList(
+      "file:///d%3A/code/proj/src/a.ts\r\n# comment\r\nfile:///d%3A/code/proj/src/b.ts#L3,5"
+    ),
+    ["file:///d%3A/code/proj/src/a.ts", "file:///d%3A/code/proj/src/b.ts"]
+  );
+  // Non-file schemes and junk lines are dropped rather than turned into paths.
+  assert.deepEqual(fileUrisFromUriList("untitled:Untitled-1\r\nvscode-remote://ssh/x"), []);
+  assert.deepEqual(fileUrisFromUriList(""), []);
+});
 
 test("toReference: plain, spaced and directory forms match DSH's grammar", () => {
   assert.equal(toReference("src/a.ts"), "@src/a.ts");
