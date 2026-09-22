@@ -10,7 +10,10 @@
 | T13 | **Shift 复测 / 决策 E3**：按住 Shift 从资源管理器拖入（**必须在指针进入面板之前按下**，因为 iframe 只对"全为 file 项"的拖拽回传 shiftKey）；若仍无反应 → 按 E3 上 TreeView 投放区（宿主侧官方 API，无 Shift、无跨源拖拽） | ⏳ 待用户 | 页面侧链路已由探针证明正常（`09-事实` §真机补充 2）；Cursor 1.128.0 与 VS Code 同款逻辑（`09-事实` §真机补充 4），所以两个编辑器都只认 Shift | `09-事实` §真机补充 ｜ `03-方案` §9 |
 | T14 | **给入口加快捷键**（`Ctrl+Alt+A` / `Cmd+Alt+A`，编辑器有焦点时加入当前文件） | ✅ 已完成 | v0.5.3：`contributes.keybindings` + 命令在无参数时回落到 `activeTextEditor`；键位在 1.105.1 默认表里零冲突（实测） | `02-需求` §7 E-B |
 | T15 | **快捷键真机验证**：打开文件按 `Ctrl+Alt+A` → composer 出现 `@该文件`；无打开文件时给出中文提示 | ⏳ 待用户 | 无法自动验证（键位分发在编辑器侧） | `02-需求` §7 A9/A10 |
-| E-C | **可选：TreeView 投放条**（官方 `TreeDragAndDropController`，宿主直接拿到 URI 列表、**不受 webview 屏蔽影响**）——真拖拽手势的唯一受支持实现 | ⏳ 待用户决定 | 代价是新增一块**常驻窄条**（建议放次级侧边栏、composer 下方）且落点不是 composer 本身 → 需要用户点头再动 UI | `02-需求` §7 E-C |
+| T16 | **快捷键定性探针**（`12-分析` §1 列出三种可能）：① `输出 → Extension Host` 看 `[dsh] activate: v…` 确认宿主版本；② `Ctrl+Shift+P → Developer: Inspect Key Mappings` 后按 `Ctrl+Alt+A`，看判给了谁；③ 退出 Snipaste（本机在跑）后重试；④ 确认焦点在编辑器里 | ⏳ 待用户 | 一次探针即可分清"没重载 / 被全局热键抢 / 焦点不对"，**三种结论对应三种不同改法**，所以不能盲改 | `12-分析` §1 |
+| T17 | **投放条真机验证**：从资源管理器拖 1 个与多个文件到**文件树下方的「DSH 上下文（拖文件到此）」**；再点一下该行（= 加入当前文件） | ⏳ 待用户 | 这是唯一不受 webview 屏蔽影响的拖拽落点（原生 TreeView，无需 Shift） | `12-分析` §2 |
+| T18 | **编辑器入口验证**：打开文件看标题栏右上角 ⊕；编辑器内右键看菜单项 | ⏳ 待用户 | 两个新入口与既有右键共用同一实现 | `02-需求` §8 R9/R10 |
+| E-C | **TreeView 投放条** | ✅ 已完成 | v0.6.0：原生 TreeView 放进**内置 Explorer 容器**（文件树正下方），`dropMimeTypes: ["text/uri-list"]`；这是"从树里拖出来"唯一自然的落点，且不受 webview 屏蔽 | `12-分析` §2 |
 | E3 | **备选：侧边栏 TreeView 投放区**（`TreeDragAndDropController`，官方支持、扩展宿主直接拿到 DataTransfer） | ⏳ 条件就绪 | 会**新增一块常驻 UI**且落点不是 composer；T13 若判定拖拽不可用即启用 | `03-方案` §9 |
 | V-03 | Cursor 内嵌 VS Code 1.128.0 的 Shift 放行逻辑核对（读其 `workbench.desktop.main.js`） | ⏳ 未开始 | 与 T11 一起做即可，单独核对成本低但收益也低 | `09-事实` §未验证点 6 |
 | K-m | **上游巡检新增面**：composer 的 `[data-composer-input]` 锚点、paste 命令绑定、`@` 语法 | ⏳ 常驻 | 已登记进 `docs/02-Areas/dsh-baseline.json` 的 `fragilePoints`；每次 dsh 升级按该条复核 | `03-方案` §7 K4 |
