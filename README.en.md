@@ -50,7 +50,8 @@ Compatible dsh versions for each dsh4vscode release — any other pairing is ref
 
 | dsh4vscode version | Compatible dsh |
 |---|---|
-| `0.6.0` (current) | `0.1.2-rc.1`, `0.1.5-rc.1`, `0.1.5-rc.2`, `0.1.6-alpha.2` |
+| `0.6.2` (current) | `0.1.2-rc.1`, `0.1.5-rc.1`, `0.1.5-rc.2`, `0.1.6-alpha.2`, `0.2.0-rc.1` |
+| `0.6.0` – `0.6.1` | `0.1.2-rc.1`, `0.1.5-rc.1`, `0.1.5-rc.2`, `0.1.6-alpha.2` |
 | `0.5.3` | `0.1.2-rc.1`, `0.1.5-rc.1`, `0.1.5-rc.2` |
 | `0.5.2` | `0.1.2-rc.1`, `0.1.5-rc.1`, `0.1.5-rc.2` |
 | `0.5.1` | `0.1.2-rc.1`, `0.1.5-rc.1`, `0.1.5-rc.2` |
@@ -62,6 +63,7 @@ Compatible dsh versions for each dsh4vscode release — any other pairing is ref
 - The versions above are the tested pairings. dsh `0.1.2-rc.1` reworked its Web surface (browser-session authentication, Typert RPC, new dist layout), which extension `≤ 0.3.3` cannot use; extension `0.3.4` in turn requires dsh `≥ 0.1.2-rc.1` (older builds are refused with an upgrade hint), so an old dsh must pair with `0.3.3`.
 - No hard cap on newer dsh versions, but dsh moves fast — give the embedded panel one regression check after upgrading dsh.
 - `0.1.6-alpha.*` lives on upstream's **`alpha` experimental channel** (`check:dsh` only tracks `latest`/`next`). This extension was measured against `0.1.6-alpha.2` with all four breakage surfaces unchanged and no code change needed, but upstream makes no backward-compatibility promise for that channel.
+- **`0.2.0-rc.1` (the `next` channel) changed the plugin URL shape**: every plugin reference inside the page went from `/plugins/…` to the relative `plugins/…` (and `<base href>` from `/` to `./`). Extension **`≤ 0.6.1` therefore cannot open the panel at all** (`Failed to load plugins`); **`0.6.2` supports both shapes**. The other three surfaces (auth / RPC / CLI flags) were measured unchanged in that version.
 
 ### Upgrading dsh to `0.1.6-alpha`
 
@@ -120,6 +122,25 @@ To make DSH use your project as its default workspace, open that folder in the w
 | `deepseekHarness.themeSync` | `follow` | Follow the VS Code color theme into the embedded DSH UI; `off` leaves DSH's own appearance untouched. |
 | `deepseekHarness.dshPath` | *(empty)* | **Optional.** Full path to the `dsh` executable. **Leave empty to auto-detect** (npm global → `$DSH_BIN` → Homebrew → nvm → npx cache) — the default and normally sufficient. Set it only when the wrong `dsh` is picked or auto-detection fails. |
 | `deepseekHarness.openTarget` | `sidebar` | Where the DSH UI opens by default: `sidebar` = a view in the right-hand Secondary Side Bar (the default; `src/openTarget.ts`'s `DEFAULT_OPEN_TARGET` and the manifest default both say so); `editorTab` = an editor tab in the right-hand editor group (wide, but takes over the editor area). The other surface is always available from the Command Palette. |
+| `deepseekHarness.showContextDrop` | `true` | Whether to show the "DSH 上下文（拖文件到此）" drop strip **inside the built-in Explorer** (under the file tree). Turn it off to remove the strip; adding files to the DSH composer still works from the explorer/editor context menus, the editor title ⊕, or `Ctrl+Alt+A`. |
+
+### Duplicate icon-less "DeepSeek Harness" entries in the activity bar?
+
+**Cause**: the view containers were renamed on 2026-09-14 (old `dsh` / `dsh-panel` → current `deepseek-harness` / `deepseek-harness-chat`).
+VS Code keeps a placeholder for a container that was **pinned once** and restores the pin when the extension comes back — that is its own behaviour, not something this extension adds.
+A placeholder has no icon to render, so it shows up as a second "document" glyph carrying the same name. It affects no functionality.
+
+**Why the extension cannot remove it**: VS Code 1.105.1 ships **no** command to remove a pinned view container
+(`workbench.action.pinView` / `unpinView` / `removePinnedViewlet` do not appear in `workbench.desktop.main.js`; verified locally).
+So it has to be cleared in the UI:
+
+1. Right-click the two icon-less "DeepSeek Harness" entries in the activity bar and unpin them from the menu;
+2. If that menu offers nothing usable, run **View: Reset View Locations** (`workbench.action.resetViewLocations`) once —
+   note this also resets **other views you have moved** in VS Code.
+
+> 0.6.1 adds a mechanical guard (`test/containerIds.test.js`): renaming a container id now fails `npm test`
+> instead of silently creating a new orphan. The verification status of these cleanup steps lives in the
+> [R20260929-01 verification doc](docs/01-Projects/R20260929-01-界面注入收敛/04-验证_界面注入收敛.md).
 
 ## Development
 

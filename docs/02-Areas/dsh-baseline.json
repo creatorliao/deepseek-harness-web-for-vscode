@@ -1,6 +1,6 @@
 {
   "$schema-comment": "本项目适配的上游 @deepseek-ai/dsh 版本基线。这是版本相关事实的唯一机器可读源；scripts/check-dsh-latest.js 读取它。人工维护的说明见 docs/02-Areas/20260914-06-上游兼容规范_跟随最新官方DSH.md。",
-  "extensionVersion": "0.6.0",
+  "extensionVersion": "0.6.2",
   "minDshVersion": "0.1.2-rc.1",
   "minDshVersionNote": "硬门：src/serverManager.ts 的 MIN_DSH_VERSION；低于此版本直接拒绝启动。改动必须同步 README.md / README.en.md / CHANGELOG.md。",
   "verified": [
@@ -27,9 +27,21 @@
       "verifiedOn": "2026-09-18",
       "depth": "隔离预演实测（四破坏面 A–D + scripts/smoke.js + 脆弱点 token 核对；**未经真机 F5**）",
       "evidence": "docs/01-Projects/R20260918-04-上游0.1.6-alpha差距与升级/03-分析_0.1.5-rc.2到0.1.6-alpha.2差距.md"
+    },
+    {
+      "version": "0.2.0-rc.1",
+      "verifiedOn": "2026-09-29",
+      "depth": "真机（本机全局安装，现场即此版本）+ 隔离 DSH_HOME 探针实测（四破坏面 A–D、真实 HTML 过改写链、脆弱点 token、settings 落盘）",
+      "evidence": "docs/01-Projects/R20260820-01-上游DSH版本适配/14-修复_dsh0.2.0插件URL改相对形态.md"
     }
   ],
   "knownBreakingChanges": [
+    {
+      "version": "0.2.0-rc.1",
+      "surfaces": ["plugin-urls", "dist-layout"],
+      "summary": "整份 HTML 的插件引用由根绝对 /plugins/… 改为文档相对 plugins/…（<base href> 由 / 改为 ./），并新增 2 个 <link rel=preload as=script>；boot JSON 的 65 entries[] + 3 batches[] 同为相对。写死绝对形态的改写链全部失配 → 面板报 Failed to load plugins",
+      "fixedIn": "0.6.2"
+    },
     {
       "version": "0.1.2-rc.1",
       "surfaces": ["auth", "rpc", "dist-layout"],
@@ -54,15 +66,15 @@
       "id": "boot-manifest",
       "what": "boot 注入形态：window.__DSH_BOOT__ = {...} 还是 globalThis[\"__DSH_BOOT__\"] = {...}；是否含 batches[]",
       "verifiedOn": "0.1.2-rc.1",
-      "code": "src/documentAssembly.ts 的 BOOT_RE",
-      "breaksHow": "正则失配 → rewriteBootPluginUrls 原样返回 → plugin URL 保持相对 → 面板报 Failed to load plugins"
+      "code": "src/documentAssembly.ts 的 BOOT_RE / absolutePluginUrl()（boot 清单里 entries[] 与 batches[] 的 url）",
+      "breaksHow": "正则失配或判据写死绝对形态 → rewriteBootPluginUrls 原样返回 → plugin URL 保持相对 → 面板报 Failed to load plugins"
     },
     {
       "id": "plugin-preload",
-      "what": "阻塞式 preload <script src=\"/plugins/...\"> 的存在与 mux 形态（/plugins/??pkg/client.js,…&rev=）",
-      "verifiedOn": "0.1.2-rc.1",
-      "code": "src/documentAssembly.ts 的 PLUGIN_PRELOAD_RE",
-      "breaksHow": "未绝对化 → webview 按 vscode-webview:// 解析 → module 队列收不到注册"
+      "what": "插件引用的 URL 形态：早期根绝对 \"/plugins/…\"；0.2.0-rc.1 起文档相对 \"plugins/…\"（无前导斜杠，配合 <base href=\"./\">），且新增 <link rel=\"preload\" as=\"script\" href=\"plugins/…\"> 形态。引导脚本的存在形式（经典 <script src> 阻塞式）未变",
+      "verifiedOn": "0.1.2-rc.1（旧形态）与 0.2.0-rc.1（新形态）",
+      "code": "src/documentAssembly.ts 的 PLUGIN_REF_RE + absolutePluginUrl()（`rewriteBootPluginPreloads`）",
+      "breaksHow": "未绝对化 → webview 按 vscode-webview:// 源解析（而不是 DSH 服务器）→ module 队列收不到 client-modules 注册 → \"Failed to load plugins / HTML did not preload …/client.js\"。**注意形态已经来回改过一次（rc.8 加 preload 标签 / 0.1.2 改 mux / 0.2 去前导斜杠），判据不要只认当前形态**"
     },
     {
       "id": "dist-asset-refs",
@@ -126,13 +138,13 @@
     }
   ],
   "audit": {
-    "lastCheckedOn": "2026-09-18",
+    "lastCheckedOn": "2026-09-29",
     "lastCheckedTags": {
-      "latest": "0.1.5-rc.2",
-      "next": "0.1.5-rc.2",
-      "alpha": "0.1.6-alpha.2"
+      "latest": "0.1.7-rc.2",
+      "next": "0.2.0-rc.1",
+      "alpha": "0.1.7-alpha.2"
     },
-    "lastCheckedResult": "已覆盖：latest 与 next（都是 0.1.5-rc.2）在 verified 列表中。alpha=0.1.6-alpha.2 经 2026-09-18 隔离预演复核通过后**已并入 verified**（用户决策：跟进 alpha，扩展版本随之升到 0.6.0）。⚠️ `scripts/check-dsh-latest.js` 的 TRACKED_CHANNELS 仍只有 latest/next，因此 alpha 通道再发新版时它**不会提示**——要跟 alpha 必须手动 `npm view @deepseek-ai/dsh dist-tags`。",
-    "localInstall": "本机全局 CLI 仍为 0.1.5-rc.2。**0.1.6-alpha.2 只做了隔离预演（临时 prefix，`DSH_BIN` 指向隔离安装），未做全局安装**——全局安装等于换掉正在跑的那棵树，必须在停掉全部 dsh 会话之后执行（见 docs/01-Projects/R20260820-01-上游DSH版本适配/11-事件_热升级内核导致会话工具链失效.md 与 docs/02-Areas/20260915-01-内核升级最佳实践.md）。本次预演覆盖：0.1.6-alpha.2 的四破坏面 A–D + `scripts/smoke.js` + 脆弱点 token；0.1.5-rc.2 侧本次补跑了设置 RPC 探针（形态与 alpha.2 一致）。**真机 F5 面板验收（渲染/插件加载/对话/剪贴板/主题跟随）仍待做。**"
+    "lastCheckedResult": "本次由现场故障驱动（用户把本机全局 dsh 从 0.1.x 升到 0.2.0-rc.1 后面板打不开）：next=0.2.0-rc.1 经真机 + 隔离探针实测，**破坏面 B（dist 资产路径 / 插件 URL 形态）破了**，已在 v0.6.2 修复并并入 verified；latest=0.1.7-rc.2 与 alpha=0.1.7-alpha.2 **本轮未探**（`TRACKED_CHANNELS` 只含 latest/next，alpha 仍不会被 `check:dsh` 提示）——如实登记为缺口，不要据本文件推断这两个版本安全。",
+    "localInstall": "本机全局 npm 树 = **0.2.0-rc.1**（用户 2026-09-29 升级，即本次故障现场）；DSH Desktop 自带树仍为 0.1.5-rc.2。⚠️ **`dsh --version` 在本机回报的是 0.1.5-rc.2**——因为 PATH 里 `%APPDATA%\\DSH Desktop\\host-commands\\desktop\\generations\\…` 的 shim 排在 `%APPDATA%\\npm\\dsh.cmd` 之前，命中的是 Desktop 那棵**旧树**；扩展的 `resolveDshPath()` 直接探 `npm prefix -g` 下的 `dsh.cmd`，故面板用的是 0.2.0-rc.1。这是「不要用 CLI 版本号当权威」的又一实例。真机面板验收（V4）待用户实测。"
   }
 }

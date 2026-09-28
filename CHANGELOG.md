@@ -7,6 +7,47 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)，
 版本号遵循[语义化版本](https://semver.org/spec/v2.0.0.html)。
 
+## [0.6.2] - 2026-09-29
+
+### 修复
+
+- **把内核升到 dsh `0.2.0-rc.1` 后，面板打不开**（页签与侧边栏都一样）：
+  boot 遮罩报 `Failed to load plugins` / `client-modules: HTML did not preload @deepseek-ai/dsh-client-modules/client.js`。
+  根因是 `0.2.0-rc.1` 把内嵌页 HTML 里的插件地址从**根绝对** `/plugins/…` 改成了**文档相对** `plugins/…`
+  （`<base href>` 同时由 `/` 变成 `./`），而扩展的改写链只认前一种形态 → 插件地址原样留在文档里 →
+  webview 按自己的源去解析 → 一个插件都加载不上。
+  现改为**两种形态都认**（`/plugins/…`、`./plugins/…`、`plugins/…`），改写幂等（重复跑不会产生 `…//plugins/…`）。
+  **仍停留在 `0.1.x` 的用户不受影响**（原有 5 条回归用例全绿）。
+- 顺带核对（同一轮实测，均无需改代码）：`0.2.0-rc.1` 的**认证、RPC 与 CLI flags 三个面未变**；
+  主题同步的写入**依然落盘**——只是上游把设置文件挪到了 `$DSH_HOME/profiles/web/cordis.patch.yml`
+  （扩展只走 RPC、不碰文件路径，所以不受影响）。
+
+### 已知限制
+
+- **本轮只装到本机，未发布到 Open VSX、未打 tag**：其它已经把 dsh 升到 `0.2.x` 的用户仍在受影响范围内。
+
+## [0.6.1] - 2026-09-29
+
+### 新增
+
+- **`deepseekHarness.showContextDrop`**（默认 `true`）：控制资源管理器里「DSH 上下文（拖文件到此）」投放条是否显示。
+  此前该投放条注入在内置 Explorer 容器里、且没有 `when` 条件，用户**无法关闭**它；现在可以关掉，
+  而"把文件加入 DSH 输入框"仍有右键菜单、编辑器标题栏 ⊕ 与 `Ctrl+Alt+A` 三个入口。
+
+### 修复
+
+- **两个视图容器不再同名同图标**：`viewsContainers.secondarySidebar` 的标题改为「DeepSeek Harness（侧边栏）」，
+  并改用新的 `media/icon-sidebar.svg`（对话气泡）。此前它与活动栏那个容器同名、同用 `media/icon.svg`，hover 也分不出是哪一个。
+- **容器 id 增加机器兜底**：新增 `test/containerIds.test.js`，锁死 `deepseek-harness` / `deepseek-harness-chat` 两个容器 id，
+  并禁止把旧 id（`dsh` / `dsh-panel`）贡献回来。起因是一条现场 VOC：2026-09-14 那次容器改名让老用户的活动栏
+  多出两个**没有图标、也删不掉**的占位条目。
+
+### 已知限制
+
+- 活动栏上**已经产生**的旧容器孤儿占位条目，**扩展无法清除**：VS Code 1.105.1 没有移除固定视图容器的命令
+  （实测 `workbench.action.pinView` / `unpinView` / `removePinnedViewlet` 在 `workbench.desktop.main.js` 里均检索不到）。
+  需要在界面上手动清一次，步骤见 README「活动栏里多出没有图标的 DeepSeek Harness？」。
+
 ## [0.6.0] - 2026-09-21
 
 ### 修复

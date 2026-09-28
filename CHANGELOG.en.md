@@ -7,6 +7,49 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.2] - 2026-09-29
+
+### Fixed
+
+- **The panel would not open after upgrading the kernel to dsh `0.2.0-rc.1`** (editor tab and sidebar alike):
+  the boot overlay reported `Failed to load plugins` / `client-modules: HTML did not preload @deepseek-ai/dsh-client-modules/client.js`.
+  The cause is that `0.2.0-rc.1` changed every plugin URL inside the embedded page from **root-absolute** `/plugins/…`
+  to **document-relative** `plugins/…` (and `<base href>` from `/` to `./`), while the rewrite chain only
+  recognised the first shape → the plugin URLs stayed relative → the webview resolved them against its own origin →
+  not a single plugin loaded. Both shapes (`/plugins/…`, `./plugins/…`, `plugins/…`) are now accepted, and the rewrite
+  is idempotent. **Users still on `0.1.x` are unaffected** (all 5 pre-existing regression cases stay green).
+- Re-checked in the same round (no code change needed): authentication, RPC and CLI flags are **unchanged** in
+  `0.2.0-rc.1`, and theme-sync writes **still land on disk** — upstream merely moved the settings file to
+  `$DSH_HOME/profiles/web/cordis.patch.yml` (the extension writes through RPC and never touches the file path).
+
+### Known limitations
+
+- **Installed locally only this round — not published to Open VSX and not tagged**: users who already upgraded dsh to `0.2.x` are still affected.
+
+## [0.6.1] - 2026-09-29
+
+### Added
+
+- **`deepseekHarness.showContextDrop`** (default `true`): controls whether the "DSH 上下文（拖文件到此）" drop strip is shown
+  inside the built-in Explorer. It used to be contributed with **no `when` clause**, so users could not get rid of it.
+  Adding files to the DSH composer keeps three other entries: the context menus, the editor title ⊕, and `Ctrl+Alt+A`.
+
+### Fixed
+
+- **The two view containers no longer share a title and an icon**: the `viewsContainers.secondarySidebar` title is now
+  "DeepSeek Harness（侧边栏）" and it uses the new `media/icon-sidebar.svg` (a speech bubble). It previously shared both
+  the title and `media/icon.svg` with the activity-bar container, so the hover text could not tell them apart.
+- **Container ids are now machine-guarded**: `test/containerIds.test.js` freezes `deepseek-harness` /
+  `deepseek-harness-chat` and rejects re-contributing the legacy ids (`dsh` / `dsh-panel`). Origin: a field VOC — the
+  2026-09-14 container rename left long-time users with two **icon-less, undeletable** entries in the activity bar.
+
+### Known limitation
+
+- The legacy orphan entries **cannot be removed by the extension**: VS Code 1.105.1 ships no command to remove a pinned
+  view container (verified: `workbench.action.pinView` / `unpinView` / `removePinnedViewlet` are absent from
+  `workbench.desktop.main.js`). They have to be cleared once in the UI — see the README section
+  "Duplicate icon-less DeepSeek Harness entries in the activity bar?".
+
 ## [0.6.0] - 2026-09-21
 
 ### Fixed

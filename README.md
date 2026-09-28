@@ -50,7 +50,8 @@
 
 | 扩展版本 | 兼容的 dsh 版本 |
 |---|---|
-| `0.6.0`（当前） | `0.1.2-rc.1`、`0.1.5-rc.1`、`0.1.5-rc.2`、`0.1.6-alpha.2` |
+| `0.6.2`（当前） | `0.1.2-rc.1`、`0.1.5-rc.1`、`0.1.5-rc.2`、`0.1.6-alpha.2`、`0.2.0-rc.1` |
+| `0.6.0` – `0.6.1` | `0.1.2-rc.1`、`0.1.5-rc.1`、`0.1.5-rc.2`、`0.1.6-alpha.2` |
 | `0.5.3` | `0.1.2-rc.1`、`0.1.5-rc.1`、`0.1.5-rc.2` |
 | `0.5.2` | `0.1.2-rc.1`、`0.1.5-rc.1`、`0.1.5-rc.2` |
 | `0.5.1` | `0.1.2-rc.1`、`0.1.5-rc.1`、`0.1.5-rc.2` |
@@ -63,6 +64,7 @@
 - 对更新的 dsh 版本未设硬上限，但上游迭代极快——升级 dsh 后建议回归一次内嵌面板。
 - **本项目的适配基线**记录在 [`docs/02-Areas/dsh-baseline.json`](docs/02-Areas/dsh-baseline.json)，可用 `npm run check:dsh` 随时核对是否已跟上上游最新版本。
 - `0.1.6-alpha.*` 属上游 **`alpha` 实验通道**（`check:dsh` 只跟踪 `latest`/`next`，不跟踪它）。本扩展在 `0.1.6-alpha.2` 上已实测四破坏面全同、无需改代码，但官方不承诺该通道向后兼容。
+- **`0.2.0-rc.1`（`next` 通道）改过插件地址形态**：整份页面里的插件引用由 `/plugins/…` 变成相对 `plugins/…`（`<base href>` 也由 `/` 变成 `./`）。扩展 **`≤ 0.6.1` 会因此打不开面板**（报 `Failed to load plugins`），**`0.6.2` 起两种形态都支持**。同版本其余三个面（认证 / RPC / CLI flags）实测未变。
 
 ### 升级 dsh 到 `0.1.6-alpha` 的须知
 
@@ -118,6 +120,26 @@ npm run package        # 产物：dist/creatorliao.deepseek-harness-for-vscode-<
 | `deepseekHarness.themeSync` | `follow` | 将 VS Code 颜色主题同步到内嵌 DSH 界面；`off` 尊重 DSH 自身外观设置。 |
 | `deepseekHarness.dshPath` | *（空）* | **可选**。`dsh` 可执行文件的完整路径。**留空即自动探测**（npm 全局 → `$DSH_BIN` → Homebrew → nvm → npx 缓存）——这是默认且通常够用的方式；仅在自动探测选错、或探测失败时才需要手工指定。 |
 | `deepseekHarness.openTarget` | `sidebar` | DSH 界面默认开在哪里：`sidebar` = **右侧次级侧边栏**里的视图（默认；源码 `src/openTarget.ts` 的 `DEFAULT_OPEN_TARGET` 与 `package.json` 的配置默认值都是它）；`editorTab` = 右侧编辑器组里的标签页（宽，但会占掉编辑器区）。另一种形态随时可用命令面板打开（`在侧边栏打开` / `在编辑器标签页打开`）。 |
+| `deepseekHarness.showContextDrop` | `true` | 是否在**资源管理器（文件树下方）**显示「DSH 上下文（拖文件到此）」投放条。关掉后投放条消失；把文件加进 DSH 输入框仍可用资源管理器/编辑器右键菜单、编辑器右上角 ⊕ 或快捷键 `Ctrl+Alt+A`。 |
+
+### 活动栏里多出没有图标的「DeepSeek Harness」？
+
+**原因**：2026-09-14 视图容器改过名（旧 `dsh` / `dsh-panel` → 现 `deepseek-harness` / `deepseek-harness-chat`）。
+VS Code 会为**曾经被固定过**的旧容器保留一个占位条目并在扩展装回时还原固定状态 —— 这是它的既有行为，不是本扩展新加的。
+占位条目没有图标可渲染，所以看起来是两个一样的"文档"图标，名字却都叫 DeepSeek Harness。
+它不影响任何功能。
+
+**扩展为什么不能自己清掉**：VS Code 1.105.1 **没有**移除固定视图容器的命令
+（`workbench.action.pinView` / `unpinView` / `removePinnedViewlet` 在 `workbench.desktop.main.js` 里均检索不到，已实测）。
+所以只能在界面上手动处理：
+
+1. 在活动栏上右键**没有图标**的那两个「DeepSeek Harness」，用菜单里的固定项取消固定；
+2. 若该菜单没有可用项，用命令面板的 **视图: 重置视图位置**（`View: Reset View Locations`）一次性复位 ——
+   注意这会把你在 VS Code 里**移动过的其它视图**也一并复位。
+
+> 0.6.1 起新增了容器 id 的机器兜底（`test/containerIds.test.js`）：今后再改容器 id 会让 `npm test` 直接报红，
+> 不会再静默产生新的孤儿条目。清理步骤的实测状态登记在
+> [R20260929-01 的验证文档](docs/01-Projects/R20260929-01-界面注入收敛/04-验证_界面注入收敛.md)。
 
 ## 开发
 

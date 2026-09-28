@@ -59,14 +59,23 @@ const SHELL_IMPORT_RE = /\.\/((?:vendor|langs)\/[A-Za-z0-9_.-]+\.js)/g;
 const BOOT_RE = /(?:window\.__DSH_BOOT__|globalThis\["__DSH_BOOT__"\])\s*=\s*(\{.*?\})<\/script>/s;
 const REV_RE = /"rev"\s*:\s*"([^"]+)"/;
 const SERVER_STATIC_RE = /(src|href)="(?:\.\/)?\/?(manifest\.webmanifest|favicon\.svg)"/g;
-// DSH boot-manifest preloads: injectBootManifest (dsh-client-modules >= rc.8)
-// emits blocking <script src="/plugins/..."> tags for @deepseek-ai/dsh-client-modules
-// and @deepseek-ai/dsh-client-runtime before window.__DSH_BOOT__. They are
-// classic scripts (cross-origin OK, spike F2/F14) but must be absolute like
-// the JSON entries, or the webview resolves them against vscode-webview://
-// and the module-system queue never receives the client-modules registration
-// ("Failed to load plugins / HTML did not preload .../client.js").
-const PLUGIN_PRELOAD_RE = /(src|href)="(\/plugins\/[^"]+)"/g;
+// DSH plugin references. Two shapes exist, and both must be made absolute
+// against the server:
+//  - dsh <= 0.1.6-alpha.2 — ROOT-ABSOLUTE, e.g.
+//      <script src="/plugins/@deepseek-ai/dsh-client-modules/client.js?rev=…">
+//      (injectBootManifest, client-modules >= rc.8) and the "/plugins/??…" mux
+//      form introduced in 0.1.2-rc.1.
+//  - dsh >= 0.2.0-rc.1 — DOCUMENT-RELATIVE, with NO leading slash, because the
+//      dist index switched to <base href="./">: the bootstrap script becomes
+//      src="plugins/??@deepseek-ai/dsh-client-modules/client.js&rev=…" and the
+//      ordinary "<link rel="preload" as="script">" hints carry the same shape.
+// They are classic scripts (cross-origin OK, spike F2/F14), but a relative url
+// is resolved against the assembled document's vscode-webview:// origin — never
+// against the DSH server — so the module-system queue never receives the
+// client-modules registration ("Failed to load plugins / HTML did not preload
+// .../client.js"). Matching both shapes here (rather than only the current one)
+// is deliberate: upstream has flipped this shape once already.
+const PLUGIN_REF_RE = /(src|href)="((?:\.\/|\/)?plugins\/[^"]+)"/g;
 
 /**
  * Normalize an index asset reference ("./assets/x.js", "/assets/x.js",
@@ -111,9 +120,30 @@ export function extractRev(html: string): string {
 }
 
 /**
+ * Absolutize one DSH plugin url against the running server.
+ *
+ * Accepts every shape upstream has used — "/plugins/…" (root-absolute, dsh <=
+ * 0.1.6-alpha.2), "./plugins/…" and "plugins/…" (document-relative, dsh >=
+ * 0.2.0-rc.1) — and is idempotent: an already-absolutized url no longer starts
+ * with a plugin-relative prefix and is returned unchanged, so running the
+ * rewrite twice cannot produce "…//plugins/…".
+ *
+ * Anything that is not a plugin url (already-absolute http(s) urls, future
+ * non-plugin entries) is returned untouched.
+ */
+function absolutePluginUrl(url: string, serverBase: string): string {
+  const rel = url.replace(/^(?:\.\/|\/)+/, "");
+  if (!rel.startsWith("plugins/")) return url;
+  return `${serverBase}/${rel}`;
+}
+
+/**
  * Rewrite the boot graph's plugin URLs to absolute server URLs (F14).
  * Since 0.1.2-rc.1 the manifest also carries a `batches` array
- * ({phase, url: "/plugins/??...", ...}) whose urls need the same treatment.
+ * ({phase, url: "/plugins/??...", ...}) whose urls need the same treatment;
+ * since 0.2.0-rc.1 every `entries[].url` / `batches[].url` is written WITHOUT
+ * the leading slash, so the old `startsWith("/")` guard rewrote nothing at all
+ * and the whole plugin graph stayed relative ("Failed to load plugins").
  */
 export function rewriteBootPluginUrls(html: string, serverBase: string): string {
   const m = html.match(BOOT_RE);
@@ -125,25 +155,25 @@ export function rewriteBootPluginUrls(html: string, serverBase: string): string 
     return html;
   }
   for (const entry of graph.entries ?? []) {
-    if (entry.url?.startsWith("/")) entry.url = serverBase + entry.url;
+    if (entry.url) entry.url = absolutePluginUrl(entry.url, serverBase);
   }
   for (const batch of graph.batches ?? []) {
-    if (batch.url?.startsWith("/")) batch.url = serverBase + batch.url;
+    if (batch.url) batch.url = absolutePluginUrl(batch.url, serverBase);
   }
   const next = JSON.stringify(graph).replaceAll("<", "\\u003c");
   return html.replace(m[1], next);
 }
 
 /**
- * Rewrite the boot-manifest preload script tags to absolute server URLs.
- * DSH (client-modules >= rc.8) injects blocking <script src="/plugins/...">
- * preloads for @deepseek-ai/dsh-client-modules and @deepseek-ai/dsh-client-runtime
- * before window.__DSH_BOOT__; like the JSON entries they must point at the
- * server or the webview origin lookup fails and the module-system queue stays
- * empty ("Failed to load plugins / HTML did not preload .../client.js").
+ * Rewrite plugin references in the markup itself — the blocking bootstrap
+ * <script src="…/plugins/…"> tag (client-modules >= rc.8) and the
+ * <link rel="preload" as="script" href="…/plugins/…"> hints (0.2.0-rc.1) — to
+ * absolute server URLs. Relative ones point at the webview origin instead of
+ * the server, so the boot queue stays empty and the overlay reports
+ * "Failed to load plugins / HTML did not preload .../client.js".
  */
 export function rewriteBootPluginPreloads(html: string, serverBase: string): string {
-  return html.replace(PLUGIN_PRELOAD_RE, (_m, attr: string, url: string) => `${attr}="${serverBase}${url}"`);
+  return html.replace(PLUGIN_REF_RE, (_m, attr: string, url: string) => `${attr}="${absolutePluginUrl(url, serverBase)}"`);
 }
 
 /**

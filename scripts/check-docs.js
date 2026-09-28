@@ -16,6 +16,16 @@
 //       last pipeline stage — never between them.
 //   R4  Every relative markdown link resolves.
 //   R5  Every `01-Projects/R*` topic folder has a `00-README.md`.
+//   R6  The release ledger agrees across the three files that record it:
+//       `package.json`'s version, CHANGELOG.md, the §2 table of 01-演进时间线.md
+//       and the §2 table of 02-路线图.md.
+//
+// R6 exists because of a real omission (2026-09-29): v0.6.0 was released and
+// recorded in the CHANGELOG and the timeline, but the roadmap's "已交付里程碑"
+// table never got a row — the table silently jumped 0.5.3 → 0.6.1. Nothing
+// caught it, so "remember to update the roadmap" was the only guard. It is now
+// mechanical. A version that was never published (0.4.0) stays out of the
+// roadmap and is exempted by being marked 「未发版」 in the timeline.
 //
 // "Typed" folder = contains at least one `NN-类型_名称.md`. This keeps the
 // free-form folders (R20260914-01-演进总览: 01-演进时间线.md, 02-路线图.md …)
@@ -151,6 +161,109 @@ for (const entry of fs.readdirSync(PROJECTS, { withFileTypes: true })) {
   if (!entry.isDirectory()) continue;
   checkTopicFolder(path.join(PROJECTS, entry.name));
 }
+
+/** R6 — the three files that record a release must agree. */
+const RELEASE_LEDGER = {
+  changelog: path.join(ROOT, "CHANGELOG.md"),
+  timeline: path.join(PROJECTS, "R20260914-01-演进总览", "01-演进时间线.md"),
+  roadmap: path.join(PROJECTS, "R20260914-01-演进总览", "02-路线图.md"),
+};
+
+/**
+ * The `## 2. …` section of a ledger file (the per-version table). R6 only reads
+ * §2: the sections after it are prose, and a version mentioned in prose is not
+ * a ledger entry.
+ */
+function section2(text) {
+  const start = text.search(/^## 2\./m);
+  if (start < 0) return "";
+  const rest = text.slice(start);
+  const next = rest.slice(1).search(/^## 3\./m);
+  return next < 0 ? rest : rest.slice(0, next + 1);
+}
+
+/**
+ * Version literals a ledger table covers. Only backticked literals count — the
+ * tables write every version as `` `x.y.z` ``, while prose carries things like
+ * `0.1.6-alpha.2` that must not be mistaken for a release of ours.
+ */
+function backtickedVersions(text) {
+  return [...text.matchAll(/`(\d+\.\d+\.\d+)`/g)].map((m) => m[1]).filter((v) => v !== undefined);
+}
+
+/**
+ * Versions covered by a ledger section, expanding the range rows the older
+ * milestones use (`` `0.0.1` – `0.0.10` ``, `` `0.3.1` – `0.3.4` ``). A patch
+ * run is expanded only when the two ends share major.minor and the gap is
+ * plausible, so a row quoting two unrelated versions adds nothing between them.
+ */
+function coveredVersions(sectionText) {
+  const covered = new Set();
+  for (const line of sectionText.split("\n")) {
+    if (!line.startsWith("| `")) continue;
+    const found = backtickedVersions(line);
+    for (const v of found) covered.add(v);
+    for (let i = 1; i < found.length; i++) {
+      const [aMajor, aMinor, aPatch] = found[i - 1].split(".").map(Number);
+      const [bMajor, bMinor, bPatch] = found[i].split(".").map(Number);
+      if (aMajor === bMajor && aMinor === bMinor && bPatch > aPatch && bPatch - aPatch <= 30) {
+        for (let patch = aPatch + 1; patch < bPatch; patch++) {
+          covered.add(`${aMajor}.${aMinor}.${patch}`);
+        }
+      }
+    }
+  }
+  return covered;
+}
+
+function checkReleaseLedger() {
+  for (const file of Object.values(RELEASE_LEDGER)) {
+    if (!fs.existsSync(file)) return; // a partial checkout is not a docs error
+  }
+  const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"));
+  const texts = {};
+  for (const [key, file] of Object.entries(RELEASE_LEDGER)) {
+    texts[key] = fs.readFileSync(file, "utf8");
+  }
+
+  // (a) Release time: the current version must be recorded in every ledger.
+  for (const [key, label] of [
+    ["changelog", "CHANGELOG.md"],
+    ["timeline", "01-演进时间线.md"],
+    ["roadmap", "02-路线图.md"],
+  ]) {
+    if (!texts[key].includes(pkg.version)) {
+      problems.push(
+        `[R6] package.json 的 version ${pkg.version} 没有登记在 ${label} 里 —— ` +
+          `发版必须四处同批登记（CHANGELOG 中英 + 演进时间线 §2 + 路线图 §2）`
+      );
+    }
+  }
+
+  // (b) Per-version history: every CHANGELOG version is in the timeline, and
+  // every PUBLISHED one is also in the roadmap. 「未发版」 is the opt-out.
+  const timelineSection = section2(texts.timeline);
+  const roadmapCovered = coveredVersions(section2(texts.roadmap));
+  const unreleased = new Set();
+  for (const line of timelineSection.split("\n")) {
+    if (!line.includes("未发版")) continue;
+    for (const version of backtickedVersions(line)) unreleased.add(version);
+  }
+  for (const match of texts.changelog.matchAll(/^## \[(\d+\.\d+\.\d+)\]/gm)) {
+    const version = match[1];
+    if (!timelineSection.includes(version)) {
+      problems.push(`[R6] CHANGELOG.md 的 ${version} 没有登记在 01-演进时间线.md §2（逐版交付台账）`);
+    } else if (!unreleased.has(version) && !roadmapCovered.has(version)) {
+      problems.push(
+        `[R6] 已发布的 ${version} 没有登记在 02-路线图.md §2「已交付里程碑」；` +
+          `确实从未发版的话，请在时间线该行标明「未发版」`
+      );
+    }
+  }
+}
+
+// R6 — the release ledger must agree (runs last: it reads whole files).
+checkReleaseLedger();
 
 if (problems.length > 0) {
   console.error(`[check:docs] ${problems.length} problem(s):`);

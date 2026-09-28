@@ -30,9 +30,9 @@
 |---|---|---|---|
 | A1 | `<script src="/assets/index-*.js">`（0.1.2 前）或 `<base href="/">` + `<script src="./assets/index-*.js">`（0.1.2 起） | 全部改为**本地同源 webview URI**（`webview.asWebviewUri(distRoot/assets/…)`） | `documentAssembly.ts:213-217`（正则 `:50`） |
 | A2 | `<link href="/manifest.webmanifest">`、`favicon.svg` | 指回 `serverBase`（这两个不值得本地化） | `documentAssembly.ts:218`（正则 `:58`） |
-| A3 | boot 清单 `entries[].url` = `/plugins/…`（相对服务器根） | 前缀加上 `serverBase`，变成绝对 URL | `rewriteBootPluginUrls:115-132` |
-| A4 | boot 清单 `batches[].url` = `/plugins/??…`（0.1.2 新增） | 同上，绝对化 | `rewriteBootPluginUrls:127-129` |
-| A5 | `<script src="/plugins/…">` 阻塞式 preload（rc.8 新增） | 同上，绝对化。**不改写会直接导致 "Failed to load plugins"** | `rewriteBootPluginPreloads:142-144`（正则 `:66`） |
+| A3 | boot 清单 `entries[].url`：`/plugins/…`（≤ 0.1.6-alpha.2）或 `plugins/…`（0.2.0-rc.1 起，无前导斜杠） | 归一化后前缀加 `serverBase`，变成绝对 URL；非插件 url 原样返回 | `rewriteBootPluginUrls:148` + `absolutePluginUrl:134` |
+| A4 | boot 清单 `batches[].url` = `/plugins/??…`（0.1.2-rc.1 新增；0.2.0-rc.1 起同样去前导斜杠） | 同上，绝对化（与 entries 走同一函数） | `rewriteBootPluginUrls:148` |
+| A5 | 插件引用本体：`<script src="/plugins/…">` 阻塞式 preload（rc.8 新增）→ 0.2.0-rc.1 起为 `<script src="plugins/…">`，并新增 `<link rel="preload" as="script" href="plugins/…">` | 同上，绝对化。**不改写会直接导致 "Failed to load plugins / HTML did not preload"**（0.2.0-rc.1 上就是这样坏的） | `rewriteBootPluginPreloads:175` + `absolutePluginUrl:134`（正则 `PLUGIN_REF_RE:78`） |
 | A6 | 无 CSP（浏览器直开不需要） | 注入严格 CSP：`default-src 'none'`、`connect-src 'none'`、`frame-src 'none'`、`worker-src 'none'`；`img-src` 里额外放行 **`blob:`**（上游图片预览全用 `URL.createObjectURL`，不放行就是破图） | `buildCsp:154-165`，注入在 `:236-238`；缘由见 [修复记录 14](../R20260817-01-桥架构与IDE内嵌/14-修复_面板内图片不显示与内测声明反复出现.md) |
 | A7 | 无桥 | 在 `<head>` 注入 `window.__DSH_BRIDGE__ = { serverBase, dark }` | `documentAssembly.ts:223` |
 | A8 | 前端自选"最近活跃"的会话 | 注入脚本写 `localStorage["dsh.sessions.current"] = {"sessionId":…}`，**在 DSH 模块脚本之前**执行 | `documentAssembly.ts:224-226`；载荷由 `workspaceTracker.buildSessionPresetPayload` 生成 |

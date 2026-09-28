@@ -90,6 +90,34 @@ test("rewriteBootPluginPreloads makes preload script src absolute (rc.8 boot man
   assert.ok(out.includes('"url":"/plugins/p/client.js?rev=1"'));
 });
 
+// --- dsh 0.2.0-rc.1: document-relative plugin urls -------------------------
+// 0.2.0-rc.1 dropped the leading slash from EVERY plugin reference and switched
+// the index to <base href="./">: the bootstrap script becomes
+//   <script src="plugins/??@deepseek-ai/dsh-client-modules/client.js&rev=…">
+// the ordinary <link rel="preload" as="script"> hints carry the same shape, and
+// all entries[]/batches[] urls in the boot JSON are relative too. Any of them
+// left as-is resolves against the vscode-webview:// origin, the queue never sees
+// the client-modules registration, and the panel shows "Failed to load plugins".
+
+test("rewriteBootPluginUrls accepts 0.2.0-rc.1 document-relative urls", () => {
+  const html = `<script>globalThis["__DSH_BOOT__"] = {"rev":"r","entries":[{"id":"p","url":"plugins/??@deepseek-ai/dsh-client-ui-layout/client.js&rev=1"}],"batches":[{"phase":"bootstrap","url":"./plugins/??@deepseek-ai/dsh-client-modules/client.js&rev=2"}]}</script>`;
+  const out = rewriteBootPluginUrls(html, "http://127.0.0.1:9999");
+  assert.ok(out.includes('"url":"http://127.0.0.1:9999/plugins/??@deepseek-ai/dsh-client-ui-layout/client.js&rev=1"'), "relative entry url not absolutized");
+  assert.ok(out.includes('"url":"http://127.0.0.1:9999/plugins/??@deepseek-ai/dsh-client-modules/client.js&rev=2"'), "relative batch url not absolutized");
+  assert.ok(!out.includes('"url":"plugins/'), "no relative plugin url may survive");
+});
+
+test("rewriteBootPluginPreloads accepts relative script src and link preload", () => {
+  const html = `<link rel="preload" as="script" href="plugins/??@deepseek-ai/dsh-client-ui-layout/client.js&amp;rev=aa"><script src="plugins/??@deepseek-ai/dsh-client-modules/client.js&amp;rev=bb"></script>`;
+  const out = rewriteBootPluginPreloads(html, "http://127.0.0.1:9999");
+  assert.ok(out.includes('href="http://127.0.0.1:9999/plugins/??@deepseek-ai/dsh-client-ui-layout/client.js&amp;rev=aa"'), "link preload href not absolutized");
+  assert.ok(out.includes('src="http://127.0.0.1:9999/plugins/??@deepseek-ai/dsh-client-modules/client.js&amp;rev=bb"'), "relative script src not absolutized");
+  assert.ok(!/(?:src|href)="(?:\.\/)?plugins\//.test(out), "no relative plugin ref may survive");
+  // Idempotent: running the pass again must not produce "...//plugins/...".
+  const twice = rewriteBootPluginPreloads(out, "http://127.0.0.1:9999");
+  assert.equal(twice, out, "second pass changed an already-absolute document");
+});
+
 test("assembleDocument downloads the tree and rewrites the document", async (t) => {
   const server = await serveDist(t);
   const dist = tmpdir(t);
@@ -332,4 +360,85 @@ test("assembleDocument sends the browser-session cookie on every server fetch", 
     assert.ok(req.url === "/" || req.url.startsWith("/assets/"), `unexpected fetch ${req.url}`);
     assert.equal(req.cookie, "dsh-auth-test=v1.sig", `cookie missing on ${req.url}`);
   }
+});
+
+/**
+ * Serve a fake 0.2.0-rc.1-shaped dist: <base href="./">, plugin refs WITHOUT the
+ * leading slash (bootstrap script + two <link rel="preload"> hints), and a boot
+ * manifest whose entries[]/batches[] urls are relative as well. Shape copied
+ * from a real captured response (spike/probe/0.2.0-rc.1/index.html).
+ */
+function serveDist020(t) {
+  const files = new Map([
+    [
+      "/",
+      `<!doctype html><html lang="en"><head><base href="./"><script>(()=>{const pendingQueue=[];window.__ModuleLoader__={mode:"queue",pendingQueue,load(r){pendingQueue.push(r)},create(){throw new Error("client-modules: HTML did not preload @deepseek-ai/dsh-client-modules/client.js")}}})()</script><link rel="preload" as="script" href="plugins/??@deepseek-ai/dsh-client-ui-layout/client.js,@deepseek-ai/dsh-api-gateway/client.js&amp;rev=aa11"><link rel="preload" as="script" href="plugins/??@deepseek-ai/dsh-typert-registry/client.js,@deepseek-ai/dsh-client-connection/client.js&amp;rev=cc33"><script src="plugins/??@deepseek-ai/dsh-client-modules/client.js&amp;rev=bb22"></script><script>globalThis["__DSH_BOOT__"] = {"rev":"rev020","entries":[{"id":"@deepseek-ai/dsh-client-ui-layout","url":"plugins/??@deepseek-ai/dsh-client-ui-layout/client.js&rev=1"}],"batches":[{"phase":"bootstrap","url":"plugins/??@deepseek-ai/dsh-client-modules/client.js&rev=2","entries":["@deepseek-ai/dsh-client-modules"]}]}</script><link rel="manifest" href="manifest.webmanifest"><link rel="icon" type="image/svg+xml" href="favicon.svg"><script type="module" crossorigin src="./assets/index-020.js"></script><link rel="modulepreload" crossorigin href="./assets/vendor-020.js"><link rel="stylesheet" crossorigin href="./assets/app-020.css"></head><body><div id="root"></div></body></html>`,
+    ],
+    ["/assets/index-020.js", `import{c}from"./vendor-020.js";import("./langs/ts-020.js");`],
+    ["/assets/vendor-020.js", "vendor-content"],
+    ["/assets/app-020.css", `@font-face{font-family:KaTeX;src:url(./fonts/ka.woff2) format("woff2")}`],
+    ["/assets/fonts/ka.woff2", Buffer.from([0, 1, 2, 3])],
+    ["/assets/langs/ts-020.js", "lang-content"],
+    ["/manifest.webmanifest", `{"name":"x"}`],
+    ["/favicon.svg", "<svg/>"],
+  ]);
+  const server = http.createServer((req, res) => {
+    const body = files.get(req.url);
+    if (body === undefined) {
+      res.writeHead(404);
+      res.end("not found");
+      return;
+    }
+    res.writeHead(200, { "content-type": "text/plain" });
+    res.end(body);
+  });
+  return new Promise((resolve) => {
+    server.listen(0, "127.0.0.1", () => {
+      const { port } = server.address();
+      t.after(() => server.close());
+      resolve({ url: `http://127.0.0.1:${port}` });
+    });
+  });
+}
+
+test("assembleDocument handles the 0.2.0-rc.1 relative plugin urls + <base href='./'>", async (t) => {
+  const server = await serveDist020(t);
+  const dist = tmpdir(t);
+
+  const { html, distRev, downloaded } = await assembleDocument({
+    serverBase: server.url,
+    distRootPath: dist,
+    asWebviewUri,
+    bridgeClientJs: "/*bridge*/",
+    cspSource: "https://*.vscode-webview.net",
+    log: () => {},
+  });
+  assert.equal(distRev, "rev020");
+  assert.equal(downloaded, true);
+
+  // 1. Assets still land locally and are rewritten to same-origin webview URIs
+  //    (the "./assets" shape is unchanged in 0.2).
+  for (const f of ["assets/index-020.js", "assets/vendor-020.js", "assets/app-020.css", "assets/fonts/ka.woff2", "assets/langs/ts-020.js"]) {
+    assert.ok(fs.existsSync(path.join(dist, f)), `missing ${f}`);
+  }
+  assert.ok(html.includes('src="vscode-webview-resource://test' + path.join(dist, "assets", "index-020.js") + '"'), "module script not rewritten");
+
+  // 2. The three plugin references are absolute against the server.
+  assert.ok(html.includes(`src="${server.url}/plugins/??@deepseek-ai/dsh-client-modules/client.js&amp;rev=bb22"`), "bootstrap script src not absolutized");
+  assert.ok(html.includes(`href="${server.url}/plugins/??@deepseek-ai/dsh-client-ui-layout/client.js,@deepseek-ai/dsh-api-gateway/client.js&amp;rev=aa11"`), "first link preload not absolutized");
+  assert.ok(html.includes(`href="${server.url}/plugins/??@deepseek-ai/dsh-typert-registry/client.js,@deepseek-ai/dsh-client-connection/client.js&amp;rev=cc33"`), "second link preload not absolutized");
+
+  // 3. Boot entries AND batches are absolute too.
+  assert.ok(html.includes(`"url":"${server.url}/plugins/??@deepseek-ai/dsh-client-ui-layout/client.js&rev=1"`), "entry url not absolutized");
+  assert.ok(html.includes(`"url":"${server.url}/plugins/??@deepseek-ai/dsh-client-modules/client.js&rev=2"`), "batch url not absolutized");
+
+  // 4. Nothing relative may survive anywhere in the document: this is the exact
+  //    condition that produced "HTML did not preload .../client.js".
+  assert.ok(!/(?:src|href)="(?:\.\/)?plugins\//.test(html), "a relative plugin ref survived assembly");
+  assert.ok(!html.includes(`${server.url}/./`), "absolutization produced a './' segment");
+  assert.ok(!html.includes("/plugins/??./"), "absolutization produced a malformed mux url");
+
+  // 5. Relative manifest/favicon refs (no "./" prefix in 0.2) point at the server.
+  assert.ok(html.includes(`href="${server.url}/manifest.webmanifest"`));
+  assert.ok(html.includes(`href="${server.url}/favicon.svg"`));
 });

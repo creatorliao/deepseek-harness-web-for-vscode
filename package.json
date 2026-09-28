@@ -2,7 +2,7 @@
   "name": "deepseek-harness-for-vscode",
   "displayName": "DeepSeek Harness for VS Code",
   "description": "Launch DeepSeek Harness and embed its Web UI inside VS Code & Antigravity — one-click start, editor-tab panel, shared instance with the browser, clipboard and theme sync.",
-  "version": "0.6.0",
+  "version": "0.6.2",
   "publisher": "creatorliao",
   "author": {
     "name": "liaohai1"
@@ -121,6 +121,11 @@
           ],
           "default": "sidebar",
           "markdownDescription": "%setting.openTarget.description%"
+        },
+        "deepseekHarness.showContextDrop": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "%setting.showContextDrop.description%"
         }
       }
     },
@@ -135,8 +140,8 @@
       "secondarySidebar": [
         {
           "id": "deepseek-harness-chat",
-          "title": "DeepSeek Harness",
-          "icon": "media/icon.svg"
+          "title": "DeepSeek Harness（侧边栏）",
+          "icon": "media/icon-sidebar.svg"
         }
       ]
     },
@@ -160,7 +165,8 @@
           "id": "deepseek-harness.contextDrop",
           "name": "%view.contextDrop.name%",
           "icon": "$(add)",
-          "contextualTitle": "%view.contextDrop.name%"
+          "contextualTitle": "%view.contextDrop.name%",
+          "when": "config.deepseekHarness.showContextDrop"
         }
       ]
     }
